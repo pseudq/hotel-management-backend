@@ -1,0 +1,41 @@
+version: "3.8"
+
+services:
+  postgres: # Service PostgreSQL (như bạn đã có)
+    image: postgres:latest
+    container_name: my-postgres-db
+    restart: always
+    environment:
+      POSTGRES_USER: myuser
+      POSTGRES_PASSWORD: mysecretpassword # ***QUAN TRỌNG***: Thay bằng mật khẩu mạnh!
+      POSTGRES_DB: myappdb
+    ports:
+      - "5432:5432" # Chỉ cần nếu bạn muốn truy cập trực tiếp từ host
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+
+  app: # Service cho ứng dụng Node.js (my-ts-express-app)
+    build:
+      context: . # Thư mục chứa Dockerfile (thư mục gốc của project)
+      dockerfile: Dockerfile # Tên file Dockerfile (nếu bạn đặt tên khác, hãy thay đổi ở đây)
+    container_name: my-ts-express-app # Tên container
+    restart: always
+    ports:
+      - "5000:5000" # Map port 5000 của container ra port 5000 trên host
+    depends_on:
+      - postgres # Đảm bảo PostgreSQL (service 'postgres') chạy trước
+    environment:
+      - DB_HOST=postgres # ***QUAN TRỌNG***: Sử dụng tên service PostgreSQL
+      - DB_PORT=5432
+      - DB_USER=myuser
+      - DB_PASSWORD=mysecretpassword # ***QUAN TRỌNG***: Thay bằng mật khẩu mạnh!
+      - DB_NAME=myappdb
+      - NODE_ENV=development
+      - API_KEY=your_api_key # Thay bằng API key của bạn
+    volumes: # Dùng cho môi trường dev, để hot reload
+      - .:/app # Mount toàn bộ project vào /app
+      - /app/node_modules
+    command: npm run dev # Ghi đè CMD trong dockerfile
+
+volumes:
+  postgres-data:
