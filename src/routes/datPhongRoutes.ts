@@ -9,5 +9,5 @@ router.get("/:id", datPhongController.getDatPhongById);
 router.post("/", datPhongController.createDatPhong);
 router.put("/:id", datPhongController.updateDatPhong);
 router.post("/:id/tra-phong", datPhongController.traPhong);
-
+router.get("/:dat_phong_id/tinh-gia", datPhongController.tinhGiaTamThoi)
 export default router;

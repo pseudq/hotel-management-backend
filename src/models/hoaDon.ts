@@ -1,134 +1,209 @@
-import pool from "../config/db";
-import type { HoaDon } from "../types";
-
-export const findAll = async (): Promise<any[]> => {
-  const result = await pool.query(`
-    SELECT hd.*, 
-      kh.ho_ten, kh.cmnd,
-      p.so_phong, p.so_tang
-    FROM hoa_don hd
-    JOIN khach_hang kh ON hd.khach_hang_id = kh.id
-    JOIN dat_phong dp ON hd.dat_phong_id = dp.id
-    JOIN phong p ON dp.phong_id = p.id
-    ORDER BY hd.thoi_gian_tra DESC
-  `);
-  return result.rows;
-};
-
-export const findById = async (id: number): Promise<any | null> => {
-  const result = await pool.query(
-    `
-    SELECT hd.*, 
-      kh.ho_ten, kh.cmnd, kh.so_dien_thoai, kh.email,
-      p.so_phong, p.so_tang,
-      lp.ten_loai_phong,
-      dp.thoi_gian_vao, dp.loai_dat
-    FROM hoa_don hd
-    JOIN khach_hang kh ON hd.khach_hang_id = kh.id
-    JOIN dat_phong dp ON hd.dat_phong_id = dp.id
-    JOIN phong p ON dp.phong_id = p.id
-    JOIN loai_phong lp ON p.loai_phong_id = lp.id
-    WHERE hd.id = $1
-  `,
-    [id]
-  );
-  return result.rows.length > 0 ? result.rows[0] : null;
-};
-
-export const create = async (hoaDon: HoaDon): Promise<HoaDon> => {
-  const result = await pool.query(
-    `INSERT INTO hoa_don (
-      dat_phong_id, khach_hang_id, thoi_gian_tra, 
-      tong_tien_phong, tong_tien_dich_vu, tong_tien,
-      phuong_thuc_thanh_toan, trang_thai_thanh_toan, ghi_chu
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
-    [
-      hoaDon.dat_phong_id,
-      hoaDon.khach_hang_id,
-      hoaDon.thoi_gian_tra,
-      hoaDon.tong_tien_phong,
-      hoaDon.tong_tien_dich_vu,
-      hoaDon.tong_tien,
-      hoaDon.phuong_thuc_thanh_toan,
-      hoaDon.trang_thai_thanh_toan || "chưa thanh toán",
-      hoaDon.ghi_chu,
-    ]
-  );
-  return result.rows[0];
-};
-
-export const update = async (
-  id: number,
-  hoaDon: Partial<HoaDon>
-): Promise<HoaDon | null> => {
-  const result = await pool.query(
-    `UPDATE hoa_don SET 
-      phuong_thuc_thanh_toan = $1, 
-      trang_thai_thanh_toan = $2, 
-      ghi_chu = $3,
-      updated_at = CURRENT_TIMESTAMP
-    WHERE id = $4 RETURNING *`,
-    [
-      hoaDon.phuong_thuc_thanh_toan,
-      hoaDon.trang_thai_thanh_toan,
-      hoaDon.ghi_chu,
-      id,
-    ]
-  );
-  return result.rows.length > 0 ? result.rows[0] : null;
-};
-
-export const getThongKe = async (
-  tuNgay?: string,
-  denNgay?: string
-): Promise<any> => {
-  let query = `
-    SELECT 
-      COUNT(*) as tong_hoa_don,
-      SUM(tong_tien) as tong_doanh_thu,
-      SUM(tong_tien_phong) as tong_tien_phong,
-      SUM(tong_tien_dich_vu) as tong_tien_dich_vu,
-      COUNT(CASE WHEN trang_thai_thanh_toan = 'đã thanh toán' THEN 1 END) as da_thanh_toan,
-      COUNT(CASE WHEN trang_thai_thanh_toan = 'chưa thanh toán' THEN 1 END) as chua_thanh_toan
-    FROM hoa_don
-    WHERE 1=1
-  `;
-
-  const params: any[] = [];
-
-  if (tuNgay) {
-    params.push(tuNgay);
-    query += ` AND thoi_gian_tra >= $${params.length}`;
-  }
-
-  if (denNgay) {
-    params.push(denNgay);
-    query += ` AND thoi_gian_tra <= $${params.length}`;
-  }
-
-  const result = await pool.query(query, params);
-  return result.rows[0];
-};
-
-export const calculateRoomCharge = (
-  loaiDat: string,
+export const calculateOptimalRoomCharge = (
   thoiGianVao: Date,
   thoiGianRa: Date,
   loaiPhong: any
-): number => {
-  const thoiGianSuDung =
-    (thoiGianRa.getTime() - thoiGianVao.getTime()) / (60 * 60 * 1000); // Số giờ
-  let tongTienPhong = 0;
+): {
+  tongTien: number;
+  chiTiet: {
+    loaiTinh: string;
+    soLuong: number;
+    donGia: number;
+    thanhTien: number;
+  }[];
+} => {
+  // Chuyển đổi thời gian từ UTC sang UTC+7
+  const TIMEZONE_OFFSET = 7; // UTC+7
 
-  if (loaiDat === "giờ") {
-    tongTienPhong =
-      loaiPhong.gia_gio_dau +
-      Math.max(0, Math.ceil(thoiGianSuDung) - 1) * loaiPhong.gia_theo_gio;
-  } else if (loaiDat === "ngày") {
-    tongTienPhong = Math.ceil(thoiGianSuDung / 24) * loaiPhong.gia_qua_ngay;
-  } else if (loaiDat === "đêm") {
-    tongTienPhong = Math.ceil(thoiGianSuDung / 24) * loaiPhong.gia_qua_dem;
-  }
+  const convertToLocalTime = (date: Date): Date => {
+    const localDate = new Date(date);
+    localDate.setUTCHours(date.getUTCHours() + TIMEZONE_OFFSET);
+    return localDate;
+  };
 
-  return tongTienPhong;
+  // Chuyển đổi thời gian vào và ra sang giờ địa phương (UTC+7)
+  const localThoiGianVao = convertToLocalTime(thoiGianVao);
+  const localThoiGianRa = convertToLocalTime(thoiGianRa);
+
+  // Tính số giờ sử dụng dựa trên thời gian địa phương
+  const thoiGianSuDungGio =
+    (localThoiGianRa.getTime() - localThoiGianVao.getTime()) / (60 * 60 * 1000);
+
+  const chiTiet: {
+    loaiTinh: string;
+    soLuong: number;
+    donGia: number;
+    thanhTien: number;
+  }[] = [];
+
+  // Chuyển đổi giá từ string sang number
+  const giaQuaDem = Number(loaiPhong.gia_qua_dem);
+  const giaGioDau = Number(loaiPhong.gia_gio_dau);
+  const giaTheoGio = Number(loaiPhong.gia_theo_gio);
+  const giaQuaNgay = Number(loaiPhong.gia_qua_ngay);
+
+  // Hàm kiểm tra và phân tích thời gian qua đêm sử dụng giờ địa phương
+  const analyzeOvernight = (
+    start: Date,
+    end: Date
+  ): {
+    isOvernight: boolean;
+    earlyHours: number;
+    lateHours: number;
+  } => {
+    const startHour = start.getHours(); // Sử dụng getHours() thay vì getUTCHours()
+    const endHour = end.getHours();
+    const startDay = start.getDate(); // Sử dụng getDate() thay vì getUTCDate()
+    const endDay = end.getDate();
+
+    // Tính giờ sớm trước 20h
+    const earlyHours = startHour < 20 ? 20 - startHour : 0;
+
+    // Tính giờ trễ sau 11h
+    const lateHours = endHour > 11 ? endHour - 11 : 0;
+
+    // TH1: Vào trước hoặc vào 20h, ra trước hoặc vào 11h hôm sau
+    if (startHour <= 20 && endDay === startDay + 1 && endHour <= 11) {
+      return { isOvernight: true, earlyHours, lateHours };
+    }
+
+    // TH2: Vào sau 20h, ra trước hoặc vào 11h hôm sau
+    if (startHour > 20 && endDay === startDay + 1 && endHour <= 11) {
+      return { isOvernight: true, earlyHours: 0, lateHours };
+    }
+
+    // TH3: Vào từ 0h-4h, ra trước hoặc vào 11h cùng ngày
+    if (
+      startHour >= 0 &&
+      startHour <= 4 &&
+      endDay === startDay &&
+      endHour <= 11
+    ) {
+      return { isOvernight: true, earlyHours: 0, lateHours };
+    }
+
+    return { isOvernight: false, earlyHours: 0, lateHours: 0 };
+  };
+
+  // Tính số ngày và số giờ dư
+  const soDem = Math.floor(thoiGianSuDungGio / 24);
+  const soGioDu = thoiGianSuDungGio % 24;
+
+  // Tính toán phương án 1: Theo qua đêm + giờ phụ trội
+  const tinhTheoQuaDem = () => {
+    const analysis = analyzeOvernight(localThoiGianVao, localThoiGianRa);
+    if (!analysis.isOvernight)
+      return { tongTien: Number.POSITIVE_INFINITY, chiTiet: [] };
+
+    let tongTien = 0;
+    const chiTietQuaDem = [];
+
+    // Tính tiền qua đêm
+    chiTietQuaDem.push({
+      loaiTinh: "Qua đêm",
+      soLuong: 1,
+      donGia: giaQuaDem,
+      thanhTien: giaQuaDem,
+    });
+    tongTien += giaQuaDem;
+
+    // Tính giờ phụ trội trước 20h
+    if (analysis.earlyHours > 0) {
+      chiTietQuaDem.push({
+        loaiTinh: "Giờ phụ trội trước",
+        soLuong: analysis.earlyHours,
+        donGia: giaTheoGio,
+        thanhTien: analysis.earlyHours * giaTheoGio,
+      });
+      tongTien += analysis.earlyHours * giaTheoGio;
+    }
+
+    // Tính giờ phụ trội sau 11h
+    if (analysis.lateHours > 0) {
+      chiTietQuaDem.push({
+        loaiTinh: "Giờ phụ trội sau",
+        soLuong: analysis.lateHours,
+        donGia: giaTheoGio,
+        thanhTien: analysis.lateHours * giaTheoGio,
+      });
+      tongTien += analysis.lateHours * giaTheoGio;
+    }
+
+    return { tongTien, chiTiet: chiTietQuaDem };
+  };
+
+  // Tính toán phương án 2: Theo giờ thông thường
+  const tinhTheoGio = () => {
+    let tongTien = 0;
+    const chiTietTheoGio = [];
+
+    // Giờ đầu
+    chiTietTheoGio.push({
+      loaiTinh: "Giờ đầu",
+      soLuong: 1,
+      donGia: giaGioDau,
+      thanhTien: giaGioDau,
+    });
+    tongTien += giaGioDau;
+
+    // Các giờ sau
+    if (thoiGianSuDungGio > 1) {
+      const soGioSau = Math.ceil(thoiGianSuDungGio - 1);
+      chiTietTheoGio.push({
+        loaiTinh: "Giờ sau",
+        soLuong: soGioSau,
+        donGia: giaTheoGio,
+        thanhTien: soGioSau * giaTheoGio,
+      });
+      tongTien += soGioSau * giaTheoGio;
+    }
+
+    return { tongTien, chiTiet: chiTietTheoGio };
+  };
+
+  // Tính toán phương án 3: Theo ngày + giờ phụ trội
+  const tinhTheoNgay = () => {
+    let tongTien = 0;
+    const chiTietTheoNgay = [];
+
+    if (soDem > 0) {
+      chiTietTheoNgay.push({
+        loaiTinh: "Ngày",
+        soLuong: soDem,
+        donGia: giaQuaNgay,
+        thanhTien: soDem * giaQuaNgay,
+      });
+      tongTien += soDem * giaQuaNgay;
+    }
+
+    if (soGioDu > 0) {
+      chiTietTheoNgay.push({
+        loaiTinh: "Giờ sau",
+        soLuong: Math.ceil(soGioDu),
+        donGia: giaTheoGio,
+        thanhTien: Math.ceil(soGioDu) * giaTheoGio,
+      });
+      tongTien += Math.ceil(soGioDu) * giaTheoGio;
+    }
+
+    return { tongTien, chiTiet: chiTietTheoNgay };
+  };
+
+  // Tính toán tất cả phương án và chọn phương án có lợi nhất cho khách
+  const ketQuaQuaDem = tinhTheoQuaDem();
+  const ketQuaTheoGio = tinhTheoGio();
+  const ketQuaTheoNgay =
+    thoiGianSuDungGio >= 24
+      ? tinhTheoNgay()
+      : { tongTien: Number.POSITIVE_INFINITY, chiTiet: [] };
+
+  // Chọn phương án có giá thấp nhất
+  const cacPhuongAn = [ketQuaQuaDem, ketQuaTheoGio, ketQuaTheoNgay];
+  const phuongAnToiUu = cacPhuongAn.reduce((min, current) =>
+    current.tongTien < min.tongTien ? current : min
+  );
+
+  return {
+    tongTien: phuongAnToiUu.tongTien,
+    chiTiet: phuongAnToiUu.chiTiet,
+  };
 };

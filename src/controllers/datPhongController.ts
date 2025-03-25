@@ -1,6 +1,7 @@
-import { Request, Response } from "express";
+import type { Request, Response } from "express";
 import pool from "../config/db";
-import { DatPhong } from "../types";
+import type { DatPhong } from "../types";
+import { calculateOptimalRoomCharge } from "../models/hoaDon";
 
 export const getAllDatPhong = async (req: Request, res: Response) => {
   try {
@@ -73,10 +74,16 @@ export const createDatPhong = async (req: Request, res: Response) => {
     phong_id,
     thoi_gian_vao,
     thoi_gian_du_kien_ra,
-    loai_dat,
     trang_thai,
     ghi_chu,
   } = req.body as DatPhong;
+
+  // Validate thời gian vào
+  if (new Date(thoi_gian_vao) > new Date()) {
+    return res
+      .status(400)
+      .json({ message: "Thời gian vào không thể trong tương lai" });
+  }
 
   // Bắt đầu transaction
   const client = await pool.connect();
@@ -102,18 +109,19 @@ export const createDatPhong = async (req: Request, res: Response) => {
         .json({ message: "Phòng không sẵn sàng để nhận khách" });
     }
 
-    // Tạo đặt phòng mới
+    // Đảm bảo thời gian vào được lưu đúng định dạng UTC
+    const thoiGianVao = new Date(thoi_gian_vao);
+    // Sử dụng trực tiếp thời gian từ client mà không thay đổi timezone
     const datPhongResult = await client.query(
       `INSERT INTO dat_phong (
-        khach_hang_id, phong_id, thoi_gian_vao, thoi_gian_du_kien_ra, 
-        loai_dat, trang_thai, ghi_chu
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+        khach_hang_id, phong_id, thoi_gian_vao, thoi_gian_du_kien_ra,
+        trang_thai, ghi_chu
+      ) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
       [
         khach_hang_id,
         phong_id,
-        thoi_gian_vao,
+        thoiGianVao, // Sử dụng trực tiếp thời gian từ request
         thoi_gian_du_kien_ra,
-        loai_dat,
         trang_thai || "đã nhận",
         ghi_chu,
       ]
@@ -146,7 +154,6 @@ export const updateDatPhong = async (req: Request, res: Response) => {
     phong_id,
     thoi_gian_vao,
     thoi_gian_du_kien_ra,
-    loai_dat,
     trang_thai,
     ghi_chu,
   } = req.body as DatPhong;
@@ -176,18 +183,16 @@ export const updateDatPhong = async (req: Request, res: Response) => {
         khach_hang_id = $1, 
         phong_id = $2, 
         thoi_gian_vao = $3, 
-        thoi_gian_du_kien_ra = $4, 
-        loai_dat = $5, 
-        trang_thai = $6, 
-        ghi_chu = $7,
+        thoi_gian_du_kien_ra = $4,
+        trang_thai = $5, 
+        ghi_chu = $6,
         updated_at = CURRENT_TIMESTAMP
-      WHERE id = $8 RETURNING *`,
+      WHERE id = $7 RETURNING *`,
       [
         khach_hang_id || current.khach_hang_id,
         phong_id || current.phong_id,
         thoi_gian_vao || current.thoi_gian_vao,
-        thoi_gian_du_kien_ra || current.thoi_gian_du_kien_ra,
-        loai_dat || current.loai_dat,
+        thoi_gian_du_kien_ra,
         trang_thai || current.trang_thai,
         ghi_chu || current.ghi_chu,
         id,
@@ -253,17 +258,16 @@ export const updateDatPhong = async (req: Request, res: Response) => {
 export const traPhong = async (req: Request, res: Response) => {
   const { id } = req.params;
 
-  // Bắt đầu transaction
   const client = await pool.connect();
 
   try {
     await client.query("BEGIN");
 
-    // Lấy thông tin đặt phòng
     const datPhongResult = await client.query(
-      `SELECT dp.*, p.id as phong_id 
+      `SELECT dp.*, p.id as phong_id, p.loai_phong_id, lp.*
        FROM dat_phong dp 
        JOIN phong p ON dp.phong_id = p.id 
+       JOIN loai_phong lp ON p.loai_phong_id = lp.id
        WHERE dp.id = $1`,
       [id]
     );
@@ -282,7 +286,10 @@ export const traPhong = async (req: Request, res: Response) => {
         .json({ message: "Chỉ có thể trả phòng đang được sử dụng" });
     }
 
-    // Cập nhật trạng thái đặt phòng
+    // Sử dụng thời gian hiện tại UTC
+    const thoiGianRa = new Date();
+
+    // Cập nhật trạng thái
     await client.query(
       "UPDATE dat_phong SET trang_thai = 'đã trả', updated_at = CURRENT_TIMESTAMP WHERE id = $1",
       [id]
@@ -298,40 +305,16 @@ export const traPhong = async (req: Request, res: Response) => {
       [id]
     );
 
-    const tongTienDichVu = parseFloat(
+    const tongTienDichVu = Number.parseFloat(
       dichVuResult.rows[0].tong_tien_dich_vu || 0
     );
 
-    // Lấy thông tin loại phòng để tính tiền phòng
-    const loaiPhongResult = await client.query(
-      `SELECT lp.* 
-         FROM loai_phong lp
-         JOIN phong p ON p.loai_phong_id = lp.id
-         WHERE p.id = $1`,
-      [datPhong.phong_id]
+    // Tính tiền phòng với thời gian UTC
+    const ketQuaTinhTien = calculateOptimalRoomCharge(
+      new Date(datPhong.thoi_gian_vao),
+      thoiGianRa,
+      datPhong
     );
-
-    const loaiPhong = loaiPhongResult.rows[0];
-
-    // Tính tiền phòng dựa vào loại đặt và thời gian
-    const thoiGianVao = new Date(datPhong.thoi_gian_vao);
-    const thoiGianRa = new Date();
-    const thoiGianSuDung =
-      (thoiGianRa.getTime() - thoiGianVao.getTime()) / (60 * 60 * 1000); // Số giờ
-
-    let tongTienPhong = 0;
-
-    if (datPhong.loai_dat === "giờ") {
-      tongTienPhong =
-        loaiPhong.gia_gio_dau +
-        Math.max(0, Math.ceil(thoiGianSuDung) - 1) * loaiPhong.gia_theo_gio;
-    } else if (datPhong.loai_dat === "ngày") {
-      tongTienPhong = Math.ceil(thoiGianSuDung / 24) * loaiPhong.gia_qua_ngay;
-    } else if (datPhong.loai_dat === "đêm") {
-      tongTienPhong = Math.ceil(thoiGianSuDung / 24) * loaiPhong.gia_qua_dem;
-    }
-
-    const tongTien = tongTienPhong + tongTienDichVu;
 
     // Tạo hóa đơn
     const hoaDonResult = await client.query(
@@ -343,10 +326,10 @@ export const traPhong = async (req: Request, res: Response) => {
       [
         id,
         datPhong.khach_hang_id,
-        thoiGianRa,
-        tongTienPhong,
+        thoiGianRa.toISOString(), // Lưu thời gian UTC
+        ketQuaTinhTien.tongTien,
         tongTienDichVu,
-        tongTien,
+        ketQuaTinhTien.tongTien + tongTienDichVu,
         "chưa thanh toán",
       ]
     );
@@ -355,7 +338,10 @@ export const traPhong = async (req: Request, res: Response) => {
 
     res.status(200).json({
       message: "Trả phòng thành công",
-      hoaDon: hoaDonResult.rows[0],
+      hoaDon: {
+        ...hoaDonResult.rows[0],
+        chi_tiet_tinh_tien: ketQuaTinhTien.chiTiet,
+      },
     });
   } catch (error) {
     await client.query("ROLLBACK");
@@ -374,6 +360,113 @@ export const getKhachDangO = async (req: Request, res: Response) => {
     res.status(200).json(result.rows);
   } catch (error) {
     console.error("Error fetching khach dang o:", error);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
+export const tinhGiaTamThoi = async (req: Request, res: Response) => {
+  const { dat_phong_id } = req.params;
+
+  try {
+    const datPhongResult = await pool.query(
+      `
+      SELECT dp.*, p.loai_phong_id, lp.*
+      FROM dat_phong dp
+      JOIN phong p ON dp.phong_id = p.id
+      JOIN loai_phong lp ON p.loai_phong_id = lp.id
+      WHERE dp.id = $1 AND dp.trang_thai = 'đã nhận'
+    `,
+      [dat_phong_id]
+    );
+
+    if (datPhongResult.rows.length === 0) {
+      return res.status(404).json({
+        message: "Không tìm thấy thông tin đặt phòng hoặc phòng chưa được nhận",
+      });
+    }
+
+    const datPhong = datPhongResult.rows[0];
+
+    // Convert stored UTC times to local timezone (UTC+7)
+    const TIMEZONE_OFFSET = 7; // hours
+
+    const convertToLocalTime = (date: Date): Date => {
+      const localDate = new Date(date);
+      localDate.setTime(localDate.getTime() + TIMEZONE_OFFSET * 60 * 60 * 1000);
+      return localDate;
+    };
+
+    const convertToDisplay = (date: Date): string => {
+      const localDate = convertToLocalTime(date);
+      return localDate.toISOString();
+    };
+
+    // Convert check-in time to local
+    const thoiGianVao = new Date(datPhong.thoi_gian_vao);
+    const localThoiGianVao = convertToLocalTime(thoiGianVao);
+
+    // Get current time in local timezone
+    const now = new Date();
+    const localNow = convertToLocalTime(now);
+
+    // Calculate prices using local time
+    const tinhTienPhong = calculateOptimalRoomCharge(
+      localThoiGianVao,
+      localNow,
+      datPhong
+    );
+
+    // Tính tiền dịch vụ đã sử dụng
+    const dichVuResult = await pool.query(
+      `
+      SELECT SUM(gia_tien * so_luong) as tong_tien_dich_vu
+      FROM su_dung_dich_vu
+      WHERE dat_phong_id = $1
+    `,
+      [dat_phong_id]
+    );
+
+    const tongTienDichVu = Number(dichVuResult.rows[0].tong_tien_dich_vu || 0);
+
+    // Chi tiết dịch vụ đã sử dụng
+    const chiTietDichVu = await pool.query(
+      `
+      SELECT sd.*, dv.ten_dich_vu
+      FROM su_dung_dich_vu sd
+      JOIN dich_vu dv ON sd.dich_vu_id = dv.id
+      WHERE sd.dat_phong_id = $1
+      ORDER BY sd.thoi_gian_su_dung
+    `,
+      [dat_phong_id]
+    );
+
+    // Format response with converted times for display
+    const response = {
+      thoi_gian_vao: convertToDisplay(thoiGianVao),
+      thoi_gian_hien_tai: convertToDisplay(now),
+      tien_phong: {
+        tongTien: tinhTienPhong.tongTien,
+        chiTiet: tinhTienPhong.chiTiet.map((item) => ({
+          ...item,
+          donGia: Number(item.donGia),
+          thanhTien: Number(item.thanhTien),
+        })),
+      },
+      tien_dich_vu: {
+        tong_tien: tongTienDichVu,
+        chi_tiet: chiTietDichVu.rows.map((item) => ({
+          ...item,
+          gia_tien: Number(item.gia_tien),
+          so_luong: Number(item.so_luong),
+          thoi_gian_su_dung: convertToDisplay(new Date(item.thoi_gian_su_dung)),
+        })),
+      },
+      tong_tien: Number(tinhTienPhong.tongTien) + Number(tongTienDichVu),
+    };
+
+    res.status(200).json(response);
+  } catch (error) {
+    console.error("Error calculating temporary price:", error);
     res.status(500).json({ message: "Server error" });
   }
 };
