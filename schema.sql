@@ -184,3 +184,67 @@ CREATE INDEX idx_khach_hang_cmnd ON khach_hang(cmnd);
 CREATE INDEX idx_dat_phong_thoi_gian ON dat_phong(thoi_gian_vao);
 CREATE INDEX idx_hoa_don_thoi_gian ON hoa_don(thoi_gian_tra);
 
+-- Tạo ENUM cho vai trò nhân viên
+CREATE TYPE vai_tro_nhan_vien AS ENUM ('nhân viên', 'quản lý');
+
+-- Bảng nhân viên
+CREATE TABLE nhan_vien (
+    id SERIAL PRIMARY KEY,
+    ho_ten VARCHAR(100) NOT NULL,
+    ten_dang_nhap VARCHAR(50) NOT NULL UNIQUE,
+    mat_khau VARCHAR(100) NOT NULL,
+    email VARCHAR(100) UNIQUE,
+    so_dien_thoai VARCHAR(15),
+    dia_chi TEXT,
+    ngay_sinh DATE,
+    vai_tro vai_tro_nhan_vien NOT NULL,
+    ngay_bat_dau_lam DATE NOT NULL,
+    trang_thai BOOLEAN DEFAULT TRUE, -- Đang làm việc hay đã nghỉ việc
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Trigger cập nhật updated_at cho bảng nhân viên
+CREATE TRIGGER update_nhan_vien_updated_at
+    BEFORE UPDATE ON nhan_vien
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
+
+-- Thêm index để tối ưu truy vấn
+CREATE INDEX idx_nhan_vien_ten_dang_nhap ON nhan_vien(ten_dang_nhap);
+CREATE INDEX idx_nhan_vien_vai_tro ON nhan_vien(vai_tro);
+
+-- Thêm dữ liệu mẫu
+INSERT INTO nhan_vien (
+    ho_ten,
+    ten_dang_nhap,
+    mat_khau,
+    email,
+    so_dien_thoai,
+    dia_chi,
+    ngay_sinh,
+    vai_tro,
+    ngay_bat_dau_lam
+) VALUES
+(
+    'Nguyễn Văn A',
+    'quanly01',
+    '123456',
+    'quanly01@khachsan.com',
+    '0987654321',
+    'Hà Nội',
+    '1990-01-15',
+    'quản lý',
+    '2022-01-01'
+),
+(
+    'Trần Thị B',
+    'nhanvien01',
+    '123456',
+    'nhanvien01@khachsan.com',
+    '0123456789',
+    'Hồ Chí Minh',
+    '1995-05-20',
+    'nhân viên',
+    '2023-03-15'
+);

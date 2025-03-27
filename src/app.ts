@@ -11,6 +11,7 @@ import khachHangRoutes from "./routes/khachHangRoutes";
 import datPhongRoutes from "./routes/datPhongRoutes";
 import dichVuRoutes from "./routes/dichVuRoutes";
 import hoaDonRoutes from "./routes/hoaDonRoutes";
+import authRoutes from "./routes/authRoutes";
 
 // Load environment variables
 dotenv.config();
@@ -27,6 +28,9 @@ app.use(express.urlencoded({ extended: true }));
 app.get("/", (req: Request, res: Response) => {
   res.json({ message: "Chào mừng đến với API quản lý khách sạn" });
 });
+
+// Auth routes - không cần xác thực trước
+app.use("/api/auth", authRoutes);
 
 // API routes with authentication
 app.use("/api/phong", authMiddleware, phongRoutes);
