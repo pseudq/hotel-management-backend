@@ -32,6 +32,7 @@ services:
       - DB_NAME=myappdb
       - NODE_ENV=development
       - API_KEY=your_api_key # Thay bằng API key của bạn
+      - JWT_SECRET=tranbaongoc0100
     volumes: # Dùng cho môi trường dev, để hot reload
       - .:/app # Mount toàn bộ project vào /app
       - /app/node_modules
