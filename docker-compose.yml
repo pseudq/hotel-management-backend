@@ -1,5 +1,3 @@
-version: "3.8"
-
 services:
   postgres: # Service PostgreSQL (như bạn đã có)
     image: postgres:latest

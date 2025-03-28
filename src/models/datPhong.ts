@@ -45,7 +45,7 @@ export const create = async (datPhong: DatPhong): Promise<DatPhong> => {
       datPhong.phong_id,
       datPhong.thoi_gian_vao,
       datPhong.thoi_gian_du_kien_ra,
-      datPhong.loai_dat,
+      // datPhong.loai_dat,
       datPhong.trang_thai || "đã nhận",
       datPhong.ghi_chu,
     ]
@@ -81,7 +81,7 @@ export const update = async (
       datPhong.phong_id || currentData.phong_id,
       datPhong.thoi_gian_vao || currentData.thoi_gian_vao,
       datPhong.thoi_gian_du_kien_ra || currentData.thoi_gian_du_kien_ra,
-      datPhong.loai_dat || currentData.loai_dat,
+      // datPhong.loai_dat || currentData.loai_dat,
       datPhong.trang_thai || currentData.trang_thai,
       datPhong.ghi_chu || currentData.ghi_chu,
       id,

@@ -257,16 +257,20 @@ export const updateDatPhong = async (req: Request, res: Response) => {
 
 export const traPhong = async (req: Request, res: Response) => {
   const { id } = req.params;
-
   const client = await pool.connect();
 
   try {
     await client.query("BEGIN");
 
+    // 1. Get booking details with room and room type info
     const datPhongResult = await client.query(
-      `SELECT dp.*, p.id as phong_id, p.loai_phong_id, lp.*
+      `SELECT dp.*, 
+        p.id as phong_id, p.so_phong, p.so_tang,
+        kh.ho_ten, kh.cmnd, kh.so_dien_thoai,
+        lp.*
        FROM dat_phong dp 
        JOIN phong p ON dp.phong_id = p.id 
+       JOIN khach_hang kh ON dp.khach_hang_id = kh.id
        JOIN loai_phong lp ON p.loai_phong_id = lp.id
        WHERE dp.id = $1`,
       [id]
@@ -279,74 +283,125 @@ export const traPhong = async (req: Request, res: Response) => {
 
     const datPhong = datPhongResult.rows[0];
 
+    // 2. Validate booking status
     if (datPhong.trang_thai !== "đã nhận") {
       await client.query("ROLLBACK");
-      return res
-        .status(400)
-        .json({ message: "Chỉ có thể trả phòng đang được sử dụng" });
+      return res.status(400).json({
+        message: "Chỉ có thể trả phòng đang được sử dụng",
+        current_status: datPhong.trang_thai,
+      });
     }
 
-    // Sử dụng thời gian hiện tại UTC
+    // 3. Get current time for checkout
     const thoiGianRa = new Date();
 
-    // Cập nhật trạng thái
-    await client.query(
-      "UPDATE dat_phong SET trang_thai = 'đã trả', updated_at = CURRENT_TIMESTAMP WHERE id = $1",
-      [id]
-    );
-    await client.query(
-      "UPDATE phong SET trang_thai = 'đang dọn', updated_at = CURRENT_TIMESTAMP WHERE id = $1",
-      [datPhong.phong_id]
-    );
-
-    // Tính tiền dịch vụ
-    const dichVuResult = await client.query(
-      "SELECT SUM(gia_tien * so_luong) as tong_tien_dich_vu FROM su_dung_dich_vu WHERE dat_phong_id = $1",
-      [id]
-    );
-
-    const tongTienDichVu = Number.parseFloat(
-      dichVuResult.rows[0].tong_tien_dich_vu || 0
-    );
-
-    // Tính tiền phòng với thời gian UTC
+    // 4. Calculate room charges using our optimal pricing algorithm
+    const thoiGianVao = new Date(datPhong.thoi_gian_vao);
     const ketQuaTinhTien = calculateOptimalRoomCharge(
-      new Date(datPhong.thoi_gian_vao),
+      thoiGianVao,
       thoiGianRa,
       datPhong
     );
+    const tongTienPhong = ketQuaTinhTien.tongTien;
 
-    // Tạo hóa đơn
+    // 5. Calculate service charges
+    const dichVuResult = await client.query(
+      `SELECT sd.*, dv.ten_dich_vu
+       FROM su_dung_dich_vu sd
+       JOIN dich_vu dv ON sd.dich_vu_id = dv.id
+       WHERE sd.dat_phong_id = $1
+       ORDER BY sd.thoi_gian_su_dung`,
+      [id]
+    );
+
+    const tongTienDichVu = dichVuResult.rows.reduce(
+      (sum: number, item: any) => sum + item.gia_tien * item.so_luong,
+      0
+    );
+
+    // 6. Create invoice
     const hoaDonResult = await client.query(
       `INSERT INTO hoa_don (
-          dat_phong_id, khach_hang_id, thoi_gian_tra, 
-          tong_tien_phong, tong_tien_dich_vu, tong_tien,
-          trang_thai_thanh_toan
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+        dat_phong_id,
+        khach_hang_id,
+        thoi_gian_tra,
+        tong_tien_phong,
+        tong_tien_dich_vu,
+        tong_tien,
+        trang_thai_thanh_toan
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7) 
+      RETURNING *`,
       [
         id,
         datPhong.khach_hang_id,
-        thoiGianRa.toISOString(), // Lưu thời gian UTC
-        ketQuaTinhTien.tongTien,
+        thoiGianRa,
+        tongTienPhong,
         tongTienDichVu,
-        ketQuaTinhTien.tongTien + tongTienDichVu,
+        tongTienPhong + tongTienDichVu,
         "chưa thanh toán",
       ]
     );
 
+    // 7. Update booking and room status
+    await client.query(
+      `UPDATE dat_phong 
+       SET trang_thai = 'đã trả',
+           updated_at = CURRENT_TIMESTAMP 
+       WHERE id = $1`,
+      [id]
+    );
+
+    await client.query(
+      `UPDATE phong 
+       SET trang_thai = 'đang dọn',
+           updated_at = CURRENT_TIMESTAMP 
+       WHERE id = $1`,
+      [datPhong.phong_id]
+    );
+
     await client.query("COMMIT");
 
-    res.status(200).json({
+    // 8. Prepare detailed response
+    const response = {
       message: "Trả phòng thành công",
-      hoaDon: {
+      hoa_don: {
         ...hoaDonResult.rows[0],
-        chi_tiet_tinh_tien: ketQuaTinhTien.chiTiet,
+        thong_tin_khach: {
+          ho_ten: datPhong.ho_ten,
+          cmnd: datPhong.cmnd,
+          so_dien_thoai: datPhong.so_dien_thoai,
+        },
+        thong_tin_phong: {
+          so_phong: datPhong.so_phong,
+          so_tang: datPhong.so_tang,
+          loai_phong: datPhong.ten_loai_phong,
+        },
+        chi_tiet_thoi_gian: {
+          check_in: thoiGianVao,
+          check_out: thoiGianRa,
+          so_gio: Math.ceil(
+            (thoiGianRa.getTime() - thoiGianVao.getTime()) / (1000 * 60 * 60)
+          ),
+        },
+        chi_tiet_dich_vu: dichVuResult.rows.map((dv) => ({
+          ten_dich_vu: dv.ten_dich_vu,
+          so_luong: dv.so_luong,
+          gia: dv.gia_tien,
+          thanh_tien: dv.gia_tien * dv.so_luong,
+          thoi_gian_su_dung: dv.thoi_gian_su_dung,
+          ghi_chu: dv.ghi_chu,
+        })),
       },
-    });
+    };
+
+    res.status(200).json(response);
   } catch (error) {
     await client.query("ROLLBACK");
     console.error("Error processing tra phong:", error);
-    res.status(500).json({ message: "Server error" });
+    res.status(500).json({
+      message: "Server error",
+      error: process.env.NODE_ENV === "development" ? error : undefined,
+    });
   } finally {
     client.release();
   }
@@ -387,32 +442,16 @@ export const tinhGiaTamThoi = async (req: Request, res: Response) => {
 
     const datPhong = datPhongResult.rows[0];
 
-    // Convert stored UTC times to local timezone (UTC+7)
-    const TIMEZONE_OFFSET = 7; // hours
-
-    const convertToLocalTime = (date: Date): Date => {
-      const localDate = new Date(date);
-      localDate.setTime(localDate.getTime() + TIMEZONE_OFFSET * 60 * 60 * 1000);
-      return localDate;
-    };
-
-    const convertToDisplay = (date: Date): string => {
-      const localDate = convertToLocalTime(date);
-      return localDate.toISOString();
-    };
-
-    // Convert check-in time to local
+    // Đảm bảo thời gian vào là UTC
     const thoiGianVao = new Date(datPhong.thoi_gian_vao);
-    const localThoiGianVao = convertToLocalTime(thoiGianVao);
 
-    // Get current time in local timezone
+    // Lấy thời gian hiện tại theo UTC
     const now = new Date();
-    const localNow = convertToLocalTime(now);
 
-    // Calculate prices using local time
+    // Tính tiền phòng với thời gian UTC
     const tinhTienPhong = calculateOptimalRoomCharge(
-      localThoiGianVao,
-      localNow,
+      thoiGianVao,
+      now,
       datPhong
     );
 
@@ -440,25 +479,17 @@ export const tinhGiaTamThoi = async (req: Request, res: Response) => {
       [dat_phong_id]
     );
 
-    // Format response with converted times for display
+    // Format lại response để đảm bảo kiểu dữ liệu nhất quán
     const response = {
-      thoi_gian_vao: convertToDisplay(thoiGianVao),
-      thoi_gian_hien_tai: convertToDisplay(now),
-      tien_phong: {
-        tongTien: tinhTienPhong.tongTien,
-        chiTiet: tinhTienPhong.chiTiet.map((item) => ({
-          ...item,
-          donGia: Number(item.donGia),
-          thanhTien: Number(item.thanhTien),
-        })),
-      },
+      thoi_gian_vao: thoiGianVao.toISOString(),
+      thoi_gian_hien_tai: now.toISOString(),
+      tien_phong: tinhTienPhong,
       tien_dich_vu: {
         tong_tien: tongTienDichVu,
         chi_tiet: chiTietDichVu.rows.map((item) => ({
           ...item,
           gia_tien: Number(item.gia_tien),
           so_luong: Number(item.so_luong),
-          thoi_gian_su_dung: convertToDisplay(new Date(item.thoi_gian_su_dung)),
         })),
       },
       tong_tien: Number(tinhTienPhong.tongTien) + Number(tongTienDichVu),

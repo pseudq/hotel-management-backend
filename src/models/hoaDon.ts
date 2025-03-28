@@ -1,3 +1,339 @@
+// Helper function to round hours based on minutes
+function getHours(durationMinutes: number, minOne = false): number {
+  const wholeHours = Math.floor(durationMinutes / 60);
+  const remainder = durationMinutes % 60;
+  // Làm tròn lên nếu phút > 5, ngược lại giữ nguyên
+  let hours = wholeHours + (remainder > 5 ? 1 : 0);
+  if (minOne && hours === 0) {
+    hours = 1;
+  }
+  return hours;
+}
+
+// Tính số giờ giữa hai thời điểm, làm tròn theo quy tắc
+function calculateHours(start: Date, end: Date): number {
+  const durationMinutes = (end.getTime() - start.getTime()) / (60 * 1000);
+  return getHours(durationMinutes, true);
+}
+
+// Tính số ngày giữa hai thời điểm
+function calculateDays(start: Date, end: Date): number {
+  const durationHours = (end.getTime() - start.getTime()) / (3600 * 1000);
+  return Math.ceil(durationHours / 24);
+}
+
+// Tính giá theo giờ
+function calculateHourlyPrice(
+  start: Date,
+  end: Date,
+  giaGioDau: number,
+  giaGioSau: number
+): { tongTien: number; chiTiet: any[] } {
+  const hours = calculateHours(start, end);
+  const chiTiet = [];
+
+  // Giờ đầu tiên
+  chiTiet.push({
+    loaiTinh: "Giờ đầu",
+    soLuong: 1,
+    donGia: giaGioDau,
+    thanhTien: giaGioDau,
+  });
+
+  // Các giờ tiếp theo
+  if (hours > 1) {
+    chiTiet.push({
+      loaiTinh: "Giờ sau",
+      soLuong: hours - 1,
+      donGia: giaGioSau,
+      thanhTien: (hours - 1) * giaGioSau,
+    });
+  }
+
+  const tongTien = giaGioDau + (hours - 1) * giaGioSau;
+
+  return { tongTien, chiTiet };
+}
+
+// Tính giá qua đêm (19:00 - 11:00 hôm sau)
+function calculateOvernightPrice(
+  start: Date,
+  end: Date,
+  giaQuaDem: number,
+  giaGioSau: number
+): { tongTien: number; chiTiet: any[] } {
+  const chiTiet = [];
+  let tongTien = 0;
+
+  // Tạo bản sao để không ảnh hưởng đến tham số gốc
+  const checkIn = new Date(start);
+  const checkOut = new Date(end);
+
+  // Tính số đêm
+  let soDem = 0;
+  let currentNight = new Date(checkIn);
+
+  // Điều chỉnh thời gian bắt đầu đêm đầu tiên
+  const firstNightStart = new Date(currentNight);
+  firstNightStart.setHours(19, 0, 0, 0);
+
+  // Nếu check-in sau 19:00, sử dụng thời gian check-in
+  // Nếu check-in trước 19:00, sử dụng 19:00
+  if (checkIn > firstNightStart) {
+    currentNight = new Date(checkIn);
+  } else {
+    currentNight = new Date(firstNightStart);
+  }
+
+  while (currentNight < checkOut) {
+    // Thời gian kết thúc đêm hiện tại là 11:00 sáng hôm sau
+    const nightEnd = new Date(currentNight);
+    nightEnd.setDate(nightEnd.getDate() + 1);
+    nightEnd.setHours(11, 0, 0, 0);
+
+    // Nếu checkout trước kết thúc đêm, đây là đêm cuối cùng
+    if (checkOut <= nightEnd) {
+      soDem++;
+      break;
+    }
+
+    // Tăng số đêm và chuyển sang đêm tiếp theo
+    soDem++;
+    currentNight = new Date(nightEnd);
+
+    // Đêm tiếp theo bắt đầu lúc 19:00
+    currentNight.setHours(19, 0, 0, 0);
+
+    // Nếu có khoảng trống giữa 11:00 và 19:00, sẽ tính riêng sau
+  }
+
+  // Thêm chi tiết số đêm
+  if (soDem > 0) {
+    chiTiet.push({
+      loaiTinh: "Qua đêm",
+      soLuong: soDem,
+      donGia: giaQuaDem,
+      thanhTien: soDem * giaQuaDem,
+    });
+    tongTien += soDem * giaQuaDem;
+  }
+
+  // Tính phụ thu đến sớm (trước 19:00)
+  if (checkIn.getHours() < 19) {
+    const earlyStart = new Date(checkIn);
+    const earlyEnd = new Date(checkIn);
+    earlyEnd.setHours(19, 0, 0, 0);
+
+    // Nếu check-in cùng ngày và trước 19:00
+    if (earlyStart < earlyEnd) {
+      const earlyHours = calculateHours(earlyStart, earlyEnd);
+      if (earlyHours > 0) {
+        chiTiet.push({
+          loaiTinh: "Phụ thu đến sớm",
+          soLuong: earlyHours,
+          donGia: giaGioSau,
+          thanhTien: earlyHours * giaGioSau,
+        });
+        tongTien += earlyHours * giaGioSau;
+      }
+    }
+  }
+
+  // Tính phụ thu trả muộn (sau 11:00)
+  if (
+    checkOut.getHours() > 11 ||
+    (checkOut.getHours() === 11 && checkOut.getMinutes() > 0)
+  ) {
+    const lateStart = new Date(checkOut);
+    lateStart.setHours(11, 0, 0, 0);
+    const lateEnd = new Date(checkOut);
+
+    // Nếu checkout cùng ngày và sau 11:00
+    if (lateStart < lateEnd) {
+      const lateHours = calculateHours(lateStart, lateEnd);
+      if (lateHours > 0) {
+        chiTiet.push({
+          loaiTinh: "Phụ thu trả muộn",
+          soLuong: lateHours,
+          donGia: giaGioSau,
+          thanhTien: lateHours * giaGioSau,
+        });
+        tongTien += lateHours * giaGioSau;
+      }
+    }
+  }
+
+  // Tính phụ thu cho khoảng thời gian giữa các đêm (11:00 - 19:00)
+  if (soDem > 1) {
+    const currentDay = new Date(checkIn);
+    currentDay.setDate(currentDay.getDate() + 1);
+    currentDay.setHours(11, 0, 0, 0);
+
+    for (let i = 0; i < soDem - 1; i++) {
+      const dayStart = new Date(currentDay);
+      const dayEnd = new Date(currentDay);
+      dayEnd.setHours(19, 0, 0, 0);
+
+      if (dayStart < dayEnd) {
+        const dayHours = calculateHours(dayStart, dayEnd);
+        if (dayHours > 0) {
+          chiTiet.push({
+            loaiTinh: "Phụ thu giữa các đêm",
+            soLuong: dayHours,
+            donGia: giaGioSau,
+            thanhTien: dayHours * giaGioSau,
+          });
+          tongTien += dayHours * giaGioSau;
+        }
+      }
+
+      currentDay.setDate(currentDay.getDate() + 1);
+    }
+  }
+
+  return { tongTien, chiTiet };
+}
+
+// Tính giá theo ngày (12:00 - 12:00 hôm sau)
+function calculateDailyPrice(
+  start: Date,
+  end: Date,
+  giaTheoNgay: number,
+  giaGioSau: number
+): { tongTien: number; chiTiet: any[] } {
+  const chiTiet = [];
+  let tongTien = 0;
+
+  // Tạo bản sao để không ảnh hưởng đến tham số gốc
+  const checkIn = new Date(start);
+  const checkOut = new Date(end);
+
+  // Tính số ngày
+  let soNgay = 0;
+  let currentDay = new Date(checkIn);
+
+  // Điều chỉnh thời gian bắt đầu ngày đầu tiên
+  const firstDayStart = new Date(currentDay);
+  firstDayStart.setHours(12, 0, 0, 0);
+
+  // Nếu check-in sau 12:00, sử dụng thời gian check-in
+  // Nếu check-in trước 12:00, sử dụng 12:00
+  if (checkIn > firstDayStart) {
+    currentDay = new Date(checkIn);
+  } else {
+    currentDay = new Date(firstDayStart);
+  }
+
+  while (currentDay < checkOut) {
+    // Thời gian kết thúc ngày hiện tại là 12:00 trưa hôm sau
+    const dayEnd = new Date(currentDay);
+    dayEnd.setDate(dayEnd.getDate() + 1);
+    dayEnd.setHours(12, 0, 0, 0);
+
+    // Nếu checkout trước kết thúc ngày, đây là ngày cuối cùng
+    if (checkOut <= dayEnd) {
+      soNgay++;
+      break;
+    }
+
+    // Tăng số ngày và chuyển sang ngày tiếp theo
+    soNgay++;
+    currentDay = new Date(dayEnd);
+  }
+
+  // Thêm chi tiết số ngày
+  if (soNgay > 0) {
+    chiTiet.push({
+      loaiTinh: "Theo ngày",
+      soLuong: soNgay,
+      donGia: giaTheoNgay,
+      thanhTien: soNgay * giaTheoNgay,
+    });
+    tongTien += soNgay * giaTheoNgay;
+  }
+
+  // Tính phụ thu đến sớm (trước 12:00)
+  if (checkIn.getHours() < 12) {
+    const earlyStart = new Date(checkIn);
+    const earlyEnd = new Date(checkIn);
+    earlyEnd.setHours(12, 0, 0, 0);
+
+    // Nếu check-in cùng ngày và trước 12:00
+    if (earlyStart < earlyEnd) {
+      const earlyHours = calculateHours(earlyStart, earlyEnd);
+      if (earlyHours > 0) {
+        chiTiet.push({
+          loaiTinh: "Phụ thu đến sớm",
+          soLuong: earlyHours,
+          donGia: giaGioSau,
+          thanhTien: earlyHours * giaGioSau,
+        });
+        tongTien += earlyHours * giaGioSau;
+      }
+    }
+  }
+
+  // Tính phụ thu trả muộn (sau 12:00)
+  if (
+    checkOut.getHours() > 12 ||
+    (checkOut.getHours() === 12 && checkOut.getMinutes() > 0)
+  ) {
+    const lateStart = new Date(checkOut);
+    lateStart.setHours(12, 0, 0, 0);
+    const lateEnd = new Date(checkOut);
+
+    // Nếu checkout cùng ngày và sau 12:00
+    if (lateStart < lateEnd) {
+      const lateHours = calculateHours(lateStart, lateEnd);
+      if (lateHours > 0) {
+        chiTiet.push({
+          loaiTinh: "Phụ thu trả muộn",
+          soLuong: lateHours,
+          donGia: giaGioSau,
+          thanhTien: lateHours * giaGioSau,
+        });
+        tongTien += lateHours * giaGioSau;
+      }
+    }
+  }
+
+  return { tongTien, chiTiet };
+}
+
+// Hàm chính để tính giá tối ưu
+export function calculateOptimalPrice(
+  checkin: Date,
+  checkout: Date,
+  giaQuaDem = 150000,
+  giaTheoNgay = 250000,
+  giaGioDau = 50000,
+  giaGioSau = 20000
+): number {
+  // Tính giá theo từng phương thức
+  const hourlyPrice = calculateHourlyPrice(
+    checkin,
+    checkout,
+    giaGioDau,
+    giaGioSau
+  ).tongTien;
+  const overnightPrice = calculateOvernightPrice(
+    checkin,
+    checkout,
+    giaQuaDem,
+    giaGioSau
+  ).tongTien;
+  const dailyPrice = calculateDailyPrice(
+    checkin,
+    checkout,
+    giaTheoNgay,
+    giaGioSau
+  ).tongTien;
+
+  // Trả về giá thấp nhất
+  return Math.min(hourlyPrice, overnightPrice, dailyPrice);
+}
+
+// Hàm chính để tính giá tối ưu và trả về chi tiết
 export const calculateOptimalRoomCharge = (
   thoiGianVao: Date,
   thoiGianRa: Date,
@@ -11,199 +347,40 @@ export const calculateOptimalRoomCharge = (
     thanhTien: number;
   }[];
 } => {
-  // Chuyển đổi thời gian từ UTC sang UTC+7
-  const TIMEZONE_OFFSET = 7; // UTC+7
+  // Lấy giá từ loại phòng
+  const giaQuaDem = Number(loaiPhong.gia_qua_dem) || 150000;
+  const giaTheoNgay = Number(loaiPhong.gia_qua_ngay) || 250000;
+  const giaGioDau = Number(loaiPhong.gia_gio_dau) || 50000;
+  const giaGioSau = Number(loaiPhong.gia_theo_gio) || 20000;
 
-  const convertToLocalTime = (date: Date): Date => {
-    const localDate = new Date(date);
-    localDate.setUTCHours(date.getUTCHours() + TIMEZONE_OFFSET);
-    return localDate;
-  };
-
-  // Chuyển đổi thời gian vào và ra sang giờ địa phương (UTC+7)
-  const localThoiGianVao = convertToLocalTime(thoiGianVao);
-  const localThoiGianRa = convertToLocalTime(thoiGianRa);
-
-  // Tính số giờ sử dụng dựa trên thời gian địa phương
-  const thoiGianSuDungGio =
-    (localThoiGianRa.getTime() - localThoiGianVao.getTime()) / (60 * 60 * 1000);
-
-  const chiTiet: {
-    loaiTinh: string;
-    soLuong: number;
-    donGia: number;
-    thanhTien: number;
-  }[] = [];
-
-  // Chuyển đổi giá từ string sang number
-  const giaQuaDem = Number(loaiPhong.gia_qua_dem);
-  const giaGioDau = Number(loaiPhong.gia_gio_dau);
-  const giaTheoGio = Number(loaiPhong.gia_theo_gio);
-  const giaQuaNgay = Number(loaiPhong.gia_qua_ngay);
-
-  // Hàm kiểm tra và phân tích thời gian qua đêm sử dụng giờ địa phương
-  const analyzeOvernight = (
-    start: Date,
-    end: Date
-  ): {
-    isOvernight: boolean;
-    earlyHours: number;
-    lateHours: number;
-  } => {
-    const startHour = start.getHours(); // Sử dụng getHours() thay vì getUTCHours()
-    const endHour = end.getHours();
-    const startDay = start.getDate(); // Sử dụng getDate() thay vì getUTCDate()
-    const endDay = end.getDate();
-
-    // Tính giờ sớm trước 20h
-    const earlyHours = startHour < 20 ? 20 - startHour : 0;
-
-    // Tính giờ trễ sau 11h
-    const lateHours = endHour > 11 ? endHour - 11 : 0;
-
-    // TH1: Vào trước hoặc vào 20h, ra trước hoặc vào 11h hôm sau
-    if (startHour <= 20 && endDay === startDay + 1 && endHour <= 11) {
-      return { isOvernight: true, earlyHours, lateHours };
-    }
-
-    // TH2: Vào sau 20h, ra trước hoặc vào 11h hôm sau
-    if (startHour > 20 && endDay === startDay + 1 && endHour <= 11) {
-      return { isOvernight: true, earlyHours: 0, lateHours };
-    }
-
-    // TH3: Vào từ 0h-4h, ra trước hoặc vào 11h cùng ngày
-    if (
-      startHour >= 0 &&
-      startHour <= 4 &&
-      endDay === startDay &&
-      endHour <= 11
-    ) {
-      return { isOvernight: true, earlyHours: 0, lateHours };
-    }
-
-    return { isOvernight: false, earlyHours: 0, lateHours: 0 };
-  };
-
-  // Tính số ngày và số giờ dư
-  const soDem = Math.floor(thoiGianSuDungGio / 24);
-  const soGioDu = thoiGianSuDungGio % 24;
-
-  // Tính toán phương án 1: Theo qua đêm + giờ phụ trội
-  const tinhTheoQuaDem = () => {
-    const analysis = analyzeOvernight(localThoiGianVao, localThoiGianRa);
-    if (!analysis.isOvernight)
-      return { tongTien: Number.POSITIVE_INFINITY, chiTiet: [] };
-
-    let tongTien = 0;
-    const chiTietQuaDem = [];
-
-    // Tính tiền qua đêm
-    chiTietQuaDem.push({
-      loaiTinh: "Qua đêm",
-      soLuong: 1,
-      donGia: giaQuaDem,
-      thanhTien: giaQuaDem,
-    });
-    tongTien += giaQuaDem;
-
-    // Tính giờ phụ trội trước 20h
-    if (analysis.earlyHours > 0) {
-      chiTietQuaDem.push({
-        loaiTinh: "Giờ phụ trội trước",
-        soLuong: analysis.earlyHours,
-        donGia: giaTheoGio,
-        thanhTien: analysis.earlyHours * giaTheoGio,
-      });
-      tongTien += analysis.earlyHours * giaTheoGio;
-    }
-
-    // Tính giờ phụ trội sau 11h
-    if (analysis.lateHours > 0) {
-      chiTietQuaDem.push({
-        loaiTinh: "Giờ phụ trội sau",
-        soLuong: analysis.lateHours,
-        donGia: giaTheoGio,
-        thanhTien: analysis.lateHours * giaTheoGio,
-      });
-      tongTien += analysis.lateHours * giaTheoGio;
-    }
-
-    return { tongTien, chiTiet: chiTietQuaDem };
-  };
-
-  // Tính toán phương án 2: Theo giờ thông thường
-  const tinhTheoGio = () => {
-    let tongTien = 0;
-    const chiTietTheoGio = [];
-
-    // Giờ đầu
-    chiTietTheoGio.push({
-      loaiTinh: "Giờ đầu",
-      soLuong: 1,
-      donGia: giaGioDau,
-      thanhTien: giaGioDau,
-    });
-    tongTien += giaGioDau;
-
-    // Các giờ sau
-    if (thoiGianSuDungGio > 1) {
-      const soGioSau = Math.ceil(thoiGianSuDungGio - 1);
-      chiTietTheoGio.push({
-        loaiTinh: "Giờ sau",
-        soLuong: soGioSau,
-        donGia: giaTheoGio,
-        thanhTien: soGioSau * giaTheoGio,
-      });
-      tongTien += soGioSau * giaTheoGio;
-    }
-
-    return { tongTien, chiTiet: chiTietTheoGio };
-  };
-
-  // Tính toán phương án 3: Theo ngày + giờ phụ trội
-  const tinhTheoNgay = () => {
-    let tongTien = 0;
-    const chiTietTheoNgay = [];
-
-    if (soDem > 0) {
-      chiTietTheoNgay.push({
-        loaiTinh: "Ngày",
-        soLuong: soDem,
-        donGia: giaQuaNgay,
-        thanhTien: soDem * giaQuaNgay,
-      });
-      tongTien += soDem * giaQuaNgay;
-    }
-
-    if (soGioDu > 0) {
-      chiTietTheoNgay.push({
-        loaiTinh: "Giờ sau",
-        soLuong: Math.ceil(soGioDu),
-        donGia: giaTheoGio,
-        thanhTien: Math.ceil(soGioDu) * giaTheoGio,
-      });
-      tongTien += Math.ceil(soGioDu) * giaTheoGio;
-    }
-
-    return { tongTien, chiTiet: chiTietTheoNgay };
-  };
-
-  // Tính toán tất cả phương án và chọn phương án có lợi nhất cho khách
-  const ketQuaQuaDem = tinhTheoQuaDem();
-  const ketQuaTheoGio = tinhTheoGio();
-  const ketQuaTheoNgay =
-    thoiGianSuDungGio >= 24
-      ? tinhTheoNgay()
-      : { tongTien: Number.POSITIVE_INFINITY, chiTiet: [] };
-
-  // Chọn phương án có giá thấp nhất
-  const cacPhuongAn = [ketQuaQuaDem, ketQuaTheoGio, ketQuaTheoNgay];
-  const phuongAnToiUu = cacPhuongAn.reduce((min, current) =>
-    current.tongTien < min.tongTien ? current : min
+  // Tính giá theo từng phương thức
+  const hourlyResult = calculateHourlyPrice(
+    thoiGianVao,
+    thoiGianRa,
+    giaGioDau,
+    giaGioSau
+  );
+  const overnightResult = calculateOvernightPrice(
+    thoiGianVao,
+    thoiGianRa,
+    giaQuaDem,
+    giaGioSau
+  );
+  const dailyResult = calculateDailyPrice(
+    thoiGianVao,
+    thoiGianRa,
+    giaTheoNgay,
+    giaGioSau
   );
 
-  return {
-    tongTien: phuongAnToiUu.tongTien,
-    chiTiet: phuongAnToiUu.chiTiet,
-  };
+  // So sánh để tìm phương án rẻ nhất
+  let bestResult = hourlyResult;
+  if (overnightResult.tongTien < bestResult.tongTien) {
+    bestResult = overnightResult;
+  }
+  if (dailyResult.tongTien < bestResult.tongTien) {
+    bestResult = dailyResult;
+  }
+
+  return bestResult;
 };
