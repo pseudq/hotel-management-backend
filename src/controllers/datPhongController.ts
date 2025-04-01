@@ -383,6 +383,7 @@ export const traPhong = async (req: Request, res: Response) => {
             (thoiGianRa.getTime() - thoiGianVao.getTime()) / (1000 * 60 * 60)
           ),
         },
+        chi_tiet_tinh_tien: ketQuaTinhTien.chiTiet,
         chi_tiet_dich_vu: dichVuResult.rows.map((dv) => ({
           ten_dich_vu: dv.ten_dich_vu,
           so_luong: dv.so_luong,
@@ -448,7 +449,7 @@ export const tinhGiaTamThoi = async (req: Request, res: Response) => {
     // Lấy thời gian hiện tại theo UTC
     const now = new Date();
 
-    // Tính tiền phòng với thời gian UTC
+    // Tính tiền phòng với thời gian UTC (sẽ được chuyển đổi sang giờ Việt Nam trong hàm)
     const tinhTienPhong = calculateOptimalRoomCharge(
       thoiGianVao,
       now,

@@ -1,3 +1,10 @@
+// Helper function to convert UTC time to Vietnam time (UTC+7)
+function convertToVietnamTime(utcDate: Date): Date {
+  const vietnamTime = new Date(utcDate);
+  vietnamTime.setHours(vietnamTime.getHours() + 7);
+  return vietnamTime;
+}
+
 // Helper function to round hours based on minutes
 function getHours(durationMinutes: number, minOne = false): number {
   const wholeHours = Math.floor(durationMinutes / 60);
@@ -309,22 +316,25 @@ export function calculateOptimalPrice(
   giaGioDau = 50000,
   giaGioSau = 20000
 ): number {
+  // Chuyển đổi thời gian từ UTC sang giờ Việt Nam
+  const vietnamCheckin = convertToVietnamTime(checkin);
+  const vietnamCheckout = convertToVietnamTime(checkout);
   // Tính giá theo từng phương thức
   const hourlyPrice = calculateHourlyPrice(
-    checkin,
-    checkout,
+    vietnamCheckin,
+    vietnamCheckout,
     giaGioDau,
     giaGioSau
   ).tongTien;
   const overnightPrice = calculateOvernightPrice(
-    checkin,
-    checkout,
+    vietnamCheckin,
+    vietnamCheckout,
     giaQuaDem,
     giaGioSau
   ).tongTien;
   const dailyPrice = calculateDailyPrice(
-    checkin,
-    checkout,
+    vietnamCheckin,
+    vietnamCheckout,
     giaTheoNgay,
     giaGioSau
   ).tongTien;
@@ -347,31 +357,54 @@ export const calculateOptimalRoomCharge = (
     thanhTien: number;
   }[];
 } => {
+  // Chuyển đổi thời gian từ UTC sang giờ Việt Nam
+  const vietnamThoiGianVao = convertToVietnamTime(thoiGianVao);
+  const vietnamThoiGianRa = convertToVietnamTime(thoiGianRa);
+
+  // Log để debug
+  console.log(
+    `UTC Check-in: ${thoiGianVao.toISOString()}, Vietnam Check-in: ${vietnamThoiGianVao.toISOString()}`
+  );
+  console.log(
+    `UTC Check-out: ${thoiGianRa.toISOString()}, Vietnam Check-out: ${vietnamThoiGianRa.toISOString()}`
+  );
   // Lấy giá từ loại phòng
   const giaQuaDem = Number(loaiPhong.gia_qua_dem) || 150000;
   const giaTheoNgay = Number(loaiPhong.gia_qua_ngay) || 250000;
   const giaGioDau = Number(loaiPhong.gia_gio_dau) || 50000;
   const giaGioSau = Number(loaiPhong.gia_theo_gio) || 20000;
+  // Tính tổng số phút ở lại
+  const durationMinutes =
+    (thoiGianRa.getTime() - thoiGianVao.getTime()) / (60 * 1000);
 
+  // Nếu dưới 5 tiếng thì luôn tính theo giờ
+  if (durationMinutes < 300) {
+    return calculateHourlyPrice(thoiGianVao, thoiGianRa, giaGioDau, giaGioSau);
+  }
   // Tính giá theo từng phương thức
   const hourlyResult = calculateHourlyPrice(
-    thoiGianVao,
-    thoiGianRa,
+    vietnamThoiGianVao,
+    vietnamThoiGianRa,
     giaGioDau,
     giaGioSau
   );
   const overnightResult = calculateOvernightPrice(
-    thoiGianVao,
-    thoiGianRa,
+    vietnamThoiGianVao,
+    vietnamThoiGianRa,
     giaQuaDem,
     giaGioSau
   );
   const dailyResult = calculateDailyPrice(
-    thoiGianVao,
-    thoiGianRa,
+    vietnamThoiGianVao,
+    vietnamThoiGianRa,
     giaTheoNgay,
     giaGioSau
   );
+
+  // Log để debug
+  console.log(`Hourly price: ${hourlyResult.tongTien}`);
+  console.log(`Overnight price: ${overnightResult.tongTien}`);
+  console.log(`Daily price: ${dailyResult.tongTien}`);
 
   // So sánh để tìm phương án rẻ nhất
   let bestResult = hourlyResult;
@@ -381,6 +414,18 @@ export const calculateOptimalRoomCharge = (
   if (dailyResult.tongTien < bestResult.tongTien) {
     bestResult = dailyResult;
   }
+  // Thêm thông tin về múi giờ vào chi tiết
+  bestResult.chiTiet.unshift({
+    loaiTinh: "Thông tin thời gian",
+    soLuong: 0,
+    donGia: 0,
+    thanhTien: 0,
+    ghiChu: `Check-in: ${vietnamThoiGianVao.toLocaleString(
+      "vi-VN"
+    )} - Check-out: ${vietnamThoiGianRa.toLocaleString(
+      "vi-VN"
+    )} (Giờ Việt Nam)`,
+  });
 
   return bestResult;
 };
