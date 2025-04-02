@@ -73,43 +73,43 @@ function calculateOvernightPrice(
   let tongTien = 0;
 
   // Tạo bản sao để không ảnh hưởng đến tham số gốc
-  const checkIn = new Date(start);
-  const checkOut = new Date(end);
+  const checkIn = new Date(start.getTime());
+  const checkOut = new Date(end.getTime());
 
   // Tính số đêm
   let soDem = 0;
-  let currentNight = new Date(checkIn);
+  let currentNight = new Date(checkIn.getTime());
 
-  // Điều chỉnh thời gian bắt đầu đêm đầu tiên
-  const firstNightStart = new Date(currentNight);
-  firstNightStart.setHours(19, 0, 0, 0);
+  // Điều chỉnh thời gian bắt đầu đêm đầu tiên - 19:00 UTC
+  const firstNightStart = new Date(currentNight.getTime());
+  firstNightStart.setUTCHours(19, 0, 0, 0);
 
   // Nếu check-in sau 19:00, sử dụng thời gian check-in
   // Nếu check-in trước 19:00, sử dụng 19:00
-  if (checkIn > firstNightStart) {
-    currentNight = new Date(checkIn);
+  if (checkIn.getTime() > firstNightStart.getTime()) {
+    currentNight = new Date(checkIn.getTime());
   } else {
-    currentNight = new Date(firstNightStart);
+    currentNight = new Date(firstNightStart.getTime());
   }
 
-  while (currentNight < checkOut) {
+  while (currentNight.getTime() < checkOut.getTime()) {
     // Thời gian kết thúc đêm hiện tại là 11:00 sáng hôm sau
-    const nightEnd = new Date(currentNight);
-    nightEnd.setDate(nightEnd.getDate() + 1);
-    nightEnd.setHours(11, 0, 0, 0);
+    const nightEnd = new Date(currentNight.getTime());
+    nightEnd.setUTCDate(nightEnd.getUTCDate() + 1);
+    nightEnd.setUTCHours(11, 0, 0, 0);
 
     // Nếu checkout trước kết thúc đêm, đây là đêm cuối cùng
-    if (checkOut <= nightEnd) {
+    if (checkOut.getTime() <= nightEnd.getTime()) {
       soDem++;
       break;
     }
 
     // Tăng số đêm và chuyển sang đêm tiếp theo
     soDem++;
-    currentNight = new Date(nightEnd);
+    currentNight = new Date(nightEnd.getTime());
 
     // Đêm tiếp theo bắt đầu lúc 19:00
-    currentNight.setHours(19, 0, 0, 0);
+    currentNight.setUTCHours(19, 0, 0, 0);
 
     // Nếu có khoảng trống giữa 11:00 và 19:00, sẽ tính riêng sau
   }
@@ -126,13 +126,13 @@ function calculateOvernightPrice(
   }
 
   // Tính phụ thu đến sớm (trước 19:00)
-  if (checkIn.getHours() < 19) {
-    const earlyStart = new Date(checkIn);
-    const earlyEnd = new Date(checkIn);
-    earlyEnd.setHours(19, 0, 0, 0);
+  if (checkIn.getUTCHours() < 19) {
+    const earlyStart = new Date(checkIn.getTime());
+    const earlyEnd = new Date(checkIn.getTime());
+    earlyEnd.setUTCHours(19, 0, 0, 0);
 
     // Nếu check-in cùng ngày và trước 19:00
-    if (earlyStart < earlyEnd) {
+    if (earlyStart.getTime() < earlyEnd.getTime()) {
       const earlyHours = calculateHours(earlyStart, earlyEnd);
       if (earlyHours > 0) {
         chiTiet.push({
@@ -148,15 +148,15 @@ function calculateOvernightPrice(
 
   // Tính phụ thu trả muộn (sau 11:00)
   if (
-    checkOut.getHours() > 11 ||
-    (checkOut.getHours() === 11 && checkOut.getMinutes() > 0)
+    checkOut.getUTCHours() > 11 ||
+    (checkOut.getUTCHours() === 11 && checkOut.getUTCMinutes() > 0)
   ) {
-    const lateStart = new Date(checkOut);
-    lateStart.setHours(11, 0, 0, 0);
-    const lateEnd = new Date(checkOut);
+    const lateStart = new Date(checkOut.getTime());
+    lateStart.setUTCHours(11, 0, 0, 0);
+    const lateEnd = new Date(checkOut.getTime());
 
     // Nếu checkout cùng ngày và sau 11:00
-    if (lateStart < lateEnd) {
+    if (lateStart.getTime() < lateEnd.getTime()) {
       const lateHours = calculateHours(lateStart, lateEnd);
       if (lateHours > 0) {
         chiTiet.push({
@@ -172,16 +172,16 @@ function calculateOvernightPrice(
 
   // Tính phụ thu cho khoảng thời gian giữa các đêm (11:00 - 19:00)
   if (soDem > 1) {
-    const currentDay = new Date(checkIn);
-    currentDay.setDate(currentDay.getDate() + 1);
-    currentDay.setHours(11, 0, 0, 0);
+    const currentDay = new Date(checkIn.getTime());
+    currentDay.setUTCDate(currentDay.getUTCDate() + 1);
+    currentDay.setUTCHours(11, 0, 0, 0);
 
     for (let i = 0; i < soDem - 1; i++) {
-      const dayStart = new Date(currentDay);
-      const dayEnd = new Date(currentDay);
-      dayEnd.setHours(19, 0, 0, 0);
+      const dayStart = new Date(currentDay.getTime());
+      const dayEnd = new Date(currentDay.getTime());
+      dayEnd.setUTCHours(19, 0, 0, 0);
 
-      if (dayStart < dayEnd) {
+      if (dayStart.getTime() < dayEnd.getTime()) {
         const dayHours = calculateHours(dayStart, dayEnd);
         if (dayHours > 0) {
           chiTiet.push({
@@ -194,7 +194,7 @@ function calculateOvernightPrice(
         }
       }
 
-      currentDay.setDate(currentDay.getDate() + 1);
+      currentDay.setUTCDate(currentDay.getUTCDate() + 1);
     }
   }
 
@@ -211,44 +211,99 @@ function calculateDailyPrice(
   const chiTiet = [];
   let tongTien = 0;
 
-  // Tạo bản sao để không ảnh hưởng đến tham số gốc
-  const checkIn = new Date(start);
-  const checkOut = new Date(end);
+  // Tạo bản sao và đảm bảo sử dụng UTC
+  const checkIn = new Date(
+    Date.UTC(
+      start.getUTCFullYear(),
+      start.getUTCMonth(),
+      start.getUTCDate(),
+      start.getUTCHours(),
+      start.getUTCMinutes(),
+      start.getUTCSeconds()
+    )
+  );
 
-  // Tính số ngày
+  const checkOut = new Date(
+    Date.UTC(
+      end.getUTCFullYear(),
+      end.getUTCMonth(),
+      end.getUTCDate(),
+      end.getUTCHours(),
+      end.getUTCMinutes(),
+      end.getUTCSeconds()
+    )
+  );
+
   let soNgay = 0;
-  let currentDay = new Date(checkIn);
 
-  // Điều chỉnh thời gian bắt đầu ngày đầu tiên
-  const firstDayStart = new Date(currentDay);
-  firstDayStart.setHours(12, 0, 0, 0);
+  // Mốc tính ngày là 12:00 trưa UTC
+  const checkInDayNoon = new Date(
+    Date.UTC(
+      checkIn.getUTCFullYear(),
+      checkIn.getUTCMonth(),
+      checkIn.getUTCDate(),
+      12,
+      0,
+      0
+    )
+  );
 
-  // Nếu check-in sau 12:00, sử dụng thời gian check-in
-  // Nếu check-in trước 12:00, sử dụng 12:00
-  if (checkIn > firstDayStart) {
-    currentDay = new Date(checkIn);
-  } else {
-    currentDay = new Date(firstDayStart);
-  }
+  const checkOutDayNoon = new Date(
+    Date.UTC(
+      checkOut.getUTCFullYear(),
+      checkOut.getUTCMonth(),
+      checkOut.getUTCDate(),
+      12,
+      0,
+      0
+    )
+  );
 
-  while (currentDay < checkOut) {
-    // Thời gian kết thúc ngày hiện tại là 12:00 trưa hôm sau
-    const dayEnd = new Date(currentDay);
-    dayEnd.setDate(dayEnd.getDate() + 1);
-    dayEnd.setHours(12, 0, 0, 0);
+  // ===== FIX: Sửa lỗi tính số ngày =====
+  // Xác định điểm bắt đầu tính ngày (tempCurrentDay)
+  let tempCurrentDay = new Date(
+    Date.UTC(
+      checkIn.getUTCFullYear(),
+      checkIn.getUTCMonth(),
+      checkIn.getUTCDate() + 1,
+      12,
+      0,
+      0
+    )
+  );
 
-    // Nếu checkout trước kết thúc ngày, đây là ngày cuối cùng
-    if (checkOut <= dayEnd) {
+  // Tính số ngày tròn từ 12:00 trưa đến 12:00 trưa (UTC)
+  while (tempCurrentDay <= checkOutDayNoon) {
+    const nextDayNoon = new Date(
+      Date.UTC(
+        tempCurrentDay.getUTCFullYear(),
+        tempCurrentDay.getUTCMonth(),
+        tempCurrentDay.getUTCDate() + 1,
+        12,
+        0,
+        0
+      )
+    );
+
+    // Nếu thời điểm checkout trước hoặc bằng 12h trưa của ngày tiếp theo, thì tính là hết ngày này
+    if (checkOut <= nextDayNoon) {
       soNgay++;
-      break;
+      break; // Đã đến ngày cuối
     }
 
-    // Tăng số ngày và chuyển sang ngày tiếp theo
+    // Nếu không, tăng ngày và tiếp tục vòng lặp
     soNgay++;
-    currentDay = new Date(dayEnd);
+    tempCurrentDay = nextDayNoon; // Chuyển sang mốc 12h trưa ngày tiếp theo
   }
 
-  // Thêm chi tiết số ngày
+  // Đảm bảo số ngày không vượt quá thực tế
+  const totalDays = Math.ceil(
+    (checkOut.getTime() - checkIn.getTime()) / (24 * 60 * 60 * 1000)
+  );
+  if (soNgay > totalDays) {
+    soNgay = totalDays;
+  }
+
   if (soNgay > 0) {
     chiTiet.push({
       loaiTinh: "Theo ngày",
@@ -259,48 +314,31 @@ function calculateDailyPrice(
     tongTien += soNgay * giaTheoNgay;
   }
 
-  // Tính phụ thu đến sớm (trước 12:00)
-  if (checkIn.getHours() < 12) {
-    const earlyStart = new Date(checkIn);
-    const earlyEnd = new Date(checkIn);
-    earlyEnd.setHours(12, 0, 0, 0);
-
-    // Nếu check-in cùng ngày và trước 12:00
-    if (earlyStart < earlyEnd) {
-      const earlyHours = calculateHours(earlyStart, earlyEnd);
-      if (earlyHours > 0) {
-        chiTiet.push({
-          loaiTinh: "Phụ thu đến sớm",
-          soLuong: earlyHours,
-          donGia: giaGioSau,
-          thanhTien: earlyHours * giaGioSau,
-        });
-        tongTien += earlyHours * giaGioSau;
-      }
+  // Tính phụ thu đến sớm (checkin trước 12:00 trưa ngày đầu) - sử dụng UTC
+  if (checkIn < checkInDayNoon) {
+    const earlyHours = calculateHours(checkIn, checkInDayNoon);
+    if (earlyHours > 0) {
+      chiTiet.push({
+        loaiTinh: "Phụ thu đến sớm",
+        soLuong: earlyHours,
+        donGia: giaGioSau,
+        thanhTien: earlyHours * giaGioSau,
+      });
+      tongTien += earlyHours * giaGioSau;
     }
   }
 
-  // Tính phụ thu trả muộn (sau 12:00)
-  if (
-    checkOut.getHours() > 12 ||
-    (checkOut.getHours() === 12 && checkOut.getMinutes() > 0)
-  ) {
-    const lateStart = new Date(checkOut);
-    lateStart.setHours(12, 0, 0, 0);
-    const lateEnd = new Date(checkOut);
-
-    // Nếu checkout cùng ngày và sau 12:00
-    if (lateStart < lateEnd) {
-      const lateHours = calculateHours(lateStart, lateEnd);
-      if (lateHours > 0) {
-        chiTiet.push({
-          loaiTinh: "Phụ thu trả muộn",
-          soLuong: lateHours,
-          donGia: giaGioSau,
-          thanhTien: lateHours * giaGioSau,
-        });
-        tongTien += lateHours * giaGioSau;
-      }
+  // Tính phụ thu trả muộn (checkout sau 12:00 trưa ngày cuối) - sử dụng UTC
+  if (checkOut > checkOutDayNoon) {
+    const lateHours = calculateHours(checkOutDayNoon, checkOut);
+    if (lateHours > 0) {
+      chiTiet.push({
+        loaiTinh: "Phụ thu trả muộn",
+        soLuong: lateHours,
+        donGia: giaGioSau,
+        thanhTien: lateHours * giaGioSau,
+      });
+      tongTien += lateHours * giaGioSau;
     }
   }
 
@@ -363,10 +401,10 @@ export const calculateOptimalRoomCharge = (
 
   // Log để debug
   console.log(
-    `UTC Check-in: ${thoiGianVao.toISOString()}, Vietnam Check-in: ${vietnamThoiGianVao.toISOString()}`
+    `UTC Check-in: ${thoiGianVao.toISOString()}, Vietnam Check-in: ${vietnamThoiGianVao}`
   );
   console.log(
-    `UTC Check-out: ${thoiGianRa.toISOString()}, Vietnam Check-out: ${vietnamThoiGianRa.toISOString()}`
+    `UTC Check-out: ${thoiGianRa.toISOString()}, Vietnam Check-out: ${vietnamThoiGianRa}`
   );
   // Lấy giá từ loại phòng
   const giaQuaDem = Number(loaiPhong.gia_qua_dem) || 150000;
@@ -377,8 +415,8 @@ export const calculateOptimalRoomCharge = (
   const durationMinutes =
     (thoiGianRa.getTime() - thoiGianVao.getTime()) / (60 * 1000);
 
-  // Nếu dưới 5 tiếng thì luôn tính theo giờ
-  if (durationMinutes < 300) {
+  // Nếu dưới 6 tiếng thì luôn tính theo giờ
+  if (durationMinutes < 360) {
     return calculateHourlyPrice(thoiGianVao, thoiGianRa, giaGioDau, giaGioSau);
   }
   // Tính giá theo từng phương thức
@@ -411,7 +449,8 @@ export const calculateOptimalRoomCharge = (
   if (overnightResult.tongTien < bestResult.tongTien) {
     bestResult = overnightResult;
   }
-  if (dailyResult.tongTien < bestResult.tongTien) {
+  if (dailyResult.tongTien < bestResult.tongTien && durationMinutes > 720) {
+    //tinh theo ngày nếu ở lại trên 12 tiếng vì dưới 12 tiếng bị bug
     bestResult = dailyResult;
   }
   // Thêm thông tin về múi giờ vào chi tiết
