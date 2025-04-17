@@ -76,6 +76,44 @@ function calculateOvernightPrice(
   const checkIn = new Date(start.getTime());
   const checkOut = new Date(end.getTime());
 
+  // Kiểm tra trường hợp đặc biệt: check-in sau nửa đêm và trước 11 giờ sáng cùng ngày với check-out
+  if (
+    checkIn.getUTCHours() < 11 &&
+    checkIn.getUTCDate() === checkOut.getUTCDate()
+  ) {
+    // Đây là trường hợp đặc biệt: check-in sớm buổi sáng cùng ngày với check-out
+    // Tính là 1 đêm qua đêm
+    chiTiet.push({
+      loaiTinh: "Qua đêm",
+      soLuong: 1,
+      donGia: giaQuaDem,
+      thanhTien: giaQuaDem,
+    });
+    tongTien += giaQuaDem;
+
+    // Kiểm tra phụ thu trả muộn nếu checkout sau 11:00
+    if (
+      checkOut.getUTCHours() > 11 ||
+      (checkOut.getUTCHours() === 11 && checkOut.getUTCMinutes() > 0)
+    ) {
+      const lateStart = new Date(checkOut.getTime());
+      lateStart.setUTCHours(11, 0, 0, 0);
+      const lateHours = calculateHours(lateStart, checkOut);
+
+      if (lateHours > 0) {
+        chiTiet.push({
+          loaiTinh: "Phụ thu trả muộn",
+          soLuong: lateHours,
+          donGia: giaGioSau,
+          thanhTien: lateHours * giaGioSau,
+        });
+        tongTien += lateHours * giaGioSau;
+      }
+    }
+
+    return { tongTien, chiTiet };
+  }
+
   // Tính số đêm
   let soDem = 0;
   let currentNight = new Date(checkIn.getTime());
@@ -233,6 +271,103 @@ function calculateDailyPrice(
       end.getUTCSeconds()
     )
   );
+
+  // --- FIX: Cải thiện xử lý cho trường hợp check-in gần trưa ---
+
+  // Trường hợp 1: Check-in sau nửa đêm và trước 12 giờ trưa, check-out ngày hôm sau
+  // Hoặc Trường hợp 2: Check-in trước 12 giờ trưa của ngày đầu tiên, check-out ngày hôm sau
+  if (
+    checkIn.getUTCDate() !== checkOut.getUTCDate() &&
+    (checkIn.getUTCHours() < 12 ||
+      // Bao gồm cả trường hợp gần trưa (sau 11:00, trước 12:00)
+      (checkIn.getUTCHours() === 11 && checkIn.getUTCMinutes() > 0))
+  ) {
+    // Tính số ngày đầy đủ, không dựa vào mốc 12:00, để xử lý trường hợp check-in gần trưa
+    let soNgay;
+
+    // Tính số ngày giữa 2 ngày (không tính giờ)
+    const startDate = new Date(
+      Date.UTC(
+        checkIn.getUTCFullYear(),
+        checkIn.getUTCMonth(),
+        checkIn.getUTCDate()
+      )
+    );
+    const endDate = new Date(
+      Date.UTC(
+        checkOut.getUTCFullYear(),
+        checkOut.getUTCMonth(),
+        checkOut.getUTCDate()
+      )
+    );
+    const diffDays = Math.ceil(
+      (endDate.getTime() - startDate.getTime()) / (24 * 60 * 60 * 1000)
+    );
+
+    // Nếu check-in từ 11:00 - 12:00, xem như là buổi trưa (tính 1 ngày đầy đủ)
+    if (checkIn.getUTCHours() === 11 && checkIn.getUTCMinutes() > 0) {
+      soNgay = diffDays;
+    } else {
+      soNgay = diffDays;
+    }
+
+    // Đảm bảo có ít nhất 1 ngày
+    if (soNgay < 1) soNgay = 1;
+
+    chiTiet.push({
+      loaiTinh: "Theo ngày",
+      soLuong: soNgay,
+      donGia: giaTheoNgay,
+      thanhTien: soNgay * giaTheoNgay,
+    });
+    tongTien += soNgay * giaTheoNgay;
+
+    // Kiểm tra phụ thu đến sớm (chỉ áp dụng nếu check-in trước 11:00 sáng)
+    if (checkIn.getUTCHours() < 11) {
+      const earlyCheckInNoon = new Date(checkIn.getTime());
+      earlyCheckInNoon.setUTCHours(11, 0, 0, 0);
+
+      if (checkIn < earlyCheckInNoon) {
+        const earlyHours = calculateHours(checkIn, earlyCheckInNoon);
+        if (earlyHours > 0) {
+          chiTiet.push({
+            loaiTinh: "Phụ thu đến sớm",
+            soLuong: earlyHours,
+            donGia: giaGioSau,
+            thanhTien: earlyHours * giaGioSau,
+          });
+          tongTien += earlyHours * giaGioSau;
+        }
+      }
+    }
+
+    // Kiểm tra phụ thu trả muộn nếu checkout sau 12:00 trưa của ngày cuối
+    const checkOutDayNoon = new Date(
+      Date.UTC(
+        checkOut.getUTCFullYear(),
+        checkOut.getUTCMonth(),
+        checkOut.getUTCDate(),
+        12,
+        0,
+        0
+      )
+    );
+
+    if (checkOut > checkOutDayNoon) {
+      const lateHours = calculateHours(checkOutDayNoon, checkOut);
+      if (lateHours > 0) {
+        chiTiet.push({
+          loaiTinh: "Phụ thu trả muộn",
+          soLuong: lateHours,
+          donGia: giaGioSau,
+          thanhTien: lateHours * giaGioSau,
+        });
+        tongTien += lateHours * giaGioSau;
+      }
+    }
+
+    return { tongTien, chiTiet };
+  }
 
   let soNgay = 0;
 
@@ -393,6 +528,7 @@ export const calculateOptimalRoomCharge = (
     soLuong: number;
     donGia: number;
     thanhTien: number;
+    ghiChu?: string;
   }[];
 } => {
   // Chuyển đổi thời gian từ UTC sang giờ Việt Nam
@@ -406,11 +542,13 @@ export const calculateOptimalRoomCharge = (
   console.log(
     `UTC Check-out: ${thoiGianRa.toISOString()}, Vietnam Check-out: ${vietnamThoiGianRa}`
   );
+
   // Lấy giá từ loại phòng
   const giaQuaDem = Number(loaiPhong.gia_qua_dem) || 150000;
   const giaTheoNgay = Number(loaiPhong.gia_qua_ngay) || 250000;
   const giaGioDau = Number(loaiPhong.gia_gio_dau) || 50000;
   const giaGioSau = Number(loaiPhong.gia_theo_gio) || 20000;
+
   // Tính tổng số phút ở lại
   const durationMinutes =
     (thoiGianRa.getTime() - thoiGianVao.getTime()) / (60 * 1000);
@@ -419,6 +557,7 @@ export const calculateOptimalRoomCharge = (
   if (durationMinutes < 360) {
     return calculateHourlyPrice(thoiGianVao, thoiGianRa, giaGioDau, giaGioSau);
   }
+
   // Tính giá theo từng phương thức
   const hourlyResult = calculateHourlyPrice(
     vietnamThoiGianVao,
@@ -449,10 +588,13 @@ export const calculateOptimalRoomCharge = (
   if (overnightResult.tongTien < bestResult.tongTien) {
     bestResult = overnightResult;
   }
-  if (dailyResult.tongTien < bestResult.tongTien && durationMinutes > 720) {
-    //tinh theo ngày nếu ở lại trên 12 tiếng vì dưới 12 tiếng bị bug
+
+  // FIX: Loại bỏ giới hạn thời gian cho phương thức tính theo ngày
+  // để cho phép tính đúng trường hợp check-in gần trưa
+  if (dailyResult.tongTien < bestResult.tongTien) {
     bestResult = dailyResult;
   }
+
   // Thêm thông tin về múi giờ vào chi tiết
   bestResult.chiTiet.unshift({
     loaiTinh: "Thông tin thời gian",
