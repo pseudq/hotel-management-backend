@@ -231,7 +231,7 @@ INSERT INTO nhan_vien (
 (
     'Oanh',
     'oanh',
-    '123!@#',
+    '123321',
     'quanly01@khachsan.com',
     '0987654321',
     'Hà Nội',
@@ -242,7 +242,7 @@ INSERT INTO nhan_vien (
 (
     'Sim',
     'sim',
-    '123!@#',
+    '123321',
     'nhanvien01@khachsan.com',
     '0123456789',
     'Hồ Chí Minh',
