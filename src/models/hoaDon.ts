@@ -167,7 +167,7 @@ function calculateOvernightPrice(
   if (checkIn.getUTCHours() < 19) {
     const earlyStart = new Date(checkIn.getTime());
     const earlyEnd = new Date(checkIn.getTime());
-    earlyEnd.setUTCHours(19, 0, 0, 0);
+    earlyEnd.setUTCHours(18, 55, 0, 0);
 
     // Nếu check-in cùng ngày và trước 19:00
     if (earlyStart.getTime() < earlyEnd.getTime()) {
@@ -323,9 +323,9 @@ function calculateDailyPrice(
     tongTien += soNgay * giaTheoNgay;
 
     // Kiểm tra phụ thu đến sớm (chỉ áp dụng nếu check-in trước 11:00 sáng)
-    if (checkIn.getUTCHours() < 11) {
+    if (checkIn.getUTCHours() < 12) {
       const earlyCheckInNoon = new Date(checkIn.getTime());
-      earlyCheckInNoon.setUTCHours(11, 0, 0, 0);
+      earlyCheckInNoon.setUTCHours(11, 55, 0, 0);
 
       if (checkIn < earlyCheckInNoon) {
         const earlyHours = calculateHours(checkIn, earlyCheckInNoon);
