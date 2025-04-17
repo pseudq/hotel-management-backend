@@ -204,7 +204,7 @@ INSERT INTO phong (so_phong, so_tang, loai_phong_id, trang_thai) VALUES
 ('104', 1, 1, 'trống'),
 ('201', 2, 2, 'trống'),
 ('202', 2, 1, 'trống'),
-('203', 2, 1, 'trống');
+('203', 2, 1, 'trống'),
 ('204', 2, 1, 'trống');
 
 
