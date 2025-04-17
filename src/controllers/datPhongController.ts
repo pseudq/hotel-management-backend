@@ -9,11 +9,13 @@ export const getAllDatPhong = async (req: Request, res: Response) => {
       SELECT dp.*, 
         kh.ho_ten, kh.cmnd,
         p.so_phong, p.so_tang,
-        lp.ten_loai_phong
+        lp.ten_loai_phong,
+        nv.ho_ten as nhan_vien_ho_ten
       FROM dat_phong dp
       JOIN khach_hang kh ON dp.khach_hang_id = kh.id
       JOIN phong p ON dp.phong_id = p.id
       JOIN loai_phong lp ON p.loai_phong_id = lp.id
+      LEFT JOIN nhan_vien nv ON dp.nhan_vien_id = nv.id
       ORDER BY dp.thoi_gian_vao DESC
     `);
     res.status(200).json(result.rows);
@@ -31,11 +33,13 @@ export const getDatPhongById = async (req: Request, res: Response) => {
       SELECT dp.*, 
         kh.ho_ten, kh.cmnd,
         p.so_phong, p.so_tang,
-        lp.ten_loai_phong
+        lp.ten_loai_phong,
+        nv.ho_ten as nhan_vien_ho_ten
       FROM dat_phong dp
       JOIN khach_hang kh ON dp.khach_hang_id = kh.id
       JOIN phong p ON dp.phong_id = p.id
       JOIN loai_phong lp ON p.loai_phong_id = lp.id
+      LEFT JOIN nhan_vien nv ON dp.nhan_vien_id = nv.id
       WHERE dp.id = $1
     `,
       [id]
@@ -48,9 +52,10 @@ export const getDatPhongById = async (req: Request, res: Response) => {
     // Lấy thông tin dịch vụ đã sử dụng
     const dichVuResult = await pool.query(
       `
-      SELECT sd.*, dv.ten_dich_vu
+      SELECT sd.*, dv.ten_dich_vu, nv.ho_ten as nhan_vien_ho_ten
       FROM su_dung_dich_vu sd
       JOIN dich_vu dv ON sd.dich_vu_id = dv.id
+      LEFT JOIN nhan_vien nv ON sd.nhan_vien_id = nv.id
       WHERE sd.dat_phong_id = $1
     `,
       [id]
@@ -68,6 +73,7 @@ export const getDatPhongById = async (req: Request, res: Response) => {
   }
 };
 
+// Cập nhật hàm createDatPhong để lưu thông tin nhân viên
 export const createDatPhong = async (req: Request, res: Response) => {
   const {
     khach_hang_id,
@@ -109,17 +115,21 @@ export const createDatPhong = async (req: Request, res: Response) => {
         .json({ message: "Phòng không sẵn sàng để nhận khách" });
     }
 
+    // Lấy ID nhân viên từ token
+    const nhanVienId = (req as any).user?.id;
+
     // Đảm bảo thời gian vào được lưu đúng định dạng UTC
     const thoiGianVao = new Date(thoi_gian_vao);
     // Sử dụng trực tiếp thời gian từ client mà không thay đổi timezone
     const datPhongResult = await client.query(
       `INSERT INTO dat_phong (
-        khach_hang_id, phong_id, thoi_gian_vao, thoi_gian_du_kien_ra,
+        khach_hang_id, phong_id, nhan_vien_id, thoi_gian_vao, thoi_gian_du_kien_ra,
         trang_thai, ghi_chu
-      ) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
       [
         khach_hang_id,
         phong_id,
+        nhanVienId, // Thêm ID nhân viên
         thoiGianVao, // Sử dụng trực tiếp thời gian từ request
         thoi_gian_du_kien_ra,
         trang_thai || "đã nhận",
@@ -255,6 +265,7 @@ export const updateDatPhong = async (req: Request, res: Response) => {
   }
 };
 
+// Cập nhật hàm traPhong để lưu thông tin nhân viên
 export const traPhong = async (req: Request, res: Response) => {
   const { id } = req.params;
   const client = await pool.connect();
@@ -319,21 +330,38 @@ export const traPhong = async (req: Request, res: Response) => {
       0
     );
 
+    // Lấy ID nhân viên từ token
+    const nhanVienId = (req as any).user?.id;
+
+    // Get staff member's name
+    let nhanVienHoTen = "Unknown";
+    if (nhanVienId) {
+      const nhanVienResult = await client.query(
+        "SELECT ho_ten FROM nhan_vien WHERE id = $1",
+        [nhanVienId]
+      );
+      if (nhanVienResult.rows.length > 0) {
+        nhanVienHoTen = nhanVienResult.rows[0].ho_ten;
+      }
+    }
+
     // 6. Create invoice
     const hoaDonResult = await client.query(
       `INSERT INTO hoa_don (
         dat_phong_id,
         khach_hang_id,
+        nhan_vien_id,
         thoi_gian_tra,
         tong_tien_phong,
         tong_tien_dich_vu,
         tong_tien,
         trang_thai_thanh_toan
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7) 
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) 
       RETURNING *`,
       [
         id,
         datPhong.khach_hang_id,
+        nhanVienId, // Thêm ID nhân viên
         thoiGianRa,
         tongTienPhong,
         tongTienDichVu,
@@ -375,6 +403,10 @@ export const traPhong = async (req: Request, res: Response) => {
           so_phong: datPhong.so_phong,
           so_tang: datPhong.so_tang,
           loai_phong: datPhong.ten_loai_phong,
+        },
+        thong_tin_nhan_vien: {
+          id: nhanVienId,
+          ho_ten: nhanVienHoTen,
         },
         chi_tiet_thoi_gian: {
           check_in: thoiGianVao,

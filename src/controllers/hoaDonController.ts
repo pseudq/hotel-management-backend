@@ -1,17 +1,19 @@
-import { Request, Response } from "express";
+import type { Request, Response } from "express";
 import pool from "../config/db";
-import { HoaDon } from "../types";
+import type { HoaDon } from "../types";
 
 export const getAllHoaDon = async (req: Request, res: Response) => {
   try {
     const result = await pool.query(`
       SELECT hd.*, 
         kh.ho_ten, kh.cmnd,
-        p.so_phong, p.so_tang
+        p.so_phong, p.so_tang,
+        nv.ho_ten as nhan_vien_ho_ten
       FROM hoa_don hd
       JOIN khach_hang kh ON hd.khach_hang_id = kh.id
       JOIN dat_phong dp ON hd.dat_phong_id = dp.id
       JOIN phong p ON dp.phong_id = p.id
+      LEFT JOIN nhan_vien nv ON hd.nhan_vien_id = nv.id
       ORDER BY hd.thoi_gian_tra DESC
     `);
     res.status(200).json(result.rows);
@@ -30,12 +32,14 @@ export const getHoaDonById = async (req: Request, res: Response) => {
         kh.ho_ten, kh.cmnd, kh.so_dien_thoai, kh.email,
         p.so_phong, p.so_tang,
         lp.ten_loai_phong,
-        dp.thoi_gian_vao, dp.loai_dat
+        dp.thoi_gian_vao, dp.loai_dat,
+        nv.ho_ten as nhan_vien_ho_ten
       FROM hoa_don hd
       JOIN khach_hang kh ON hd.khach_hang_id = kh.id
       JOIN dat_phong dp ON hd.dat_phong_id = dp.id
       JOIN phong p ON dp.phong_id = p.id
       JOIN loai_phong lp ON p.loai_phong_id = lp.id
+      LEFT JOIN nhan_vien nv ON hd.nhan_vien_id = nv.id
       WHERE hd.id = $1
     `,
       [id]
@@ -48,9 +52,10 @@ export const getHoaDonById = async (req: Request, res: Response) => {
     // Lấy thông tin dịch vụ đã sử dụng
     const dichVuResult = await pool.query(
       `
-      SELECT sd.*, dv.ten_dich_vu
+      SELECT sd.*, dv.ten_dich_vu, nv.ho_ten as nhan_vien_ho_ten
       FROM su_dung_dich_vu sd
       JOIN dich_vu dv ON sd.dich_vu_id = dv.id
+      LEFT JOIN nhan_vien nv ON sd.nhan_vien_id = nv.id
       WHERE sd.dat_phong_id = $1
     `,
       [hoaDonResult.rows[0].dat_phong_id]
@@ -74,14 +79,18 @@ export const updateHoaDon = async (req: Request, res: Response) => {
     req.body as HoaDon;
 
   try {
+    // Lấy ID nhân viên từ token
+    const nhanVienId = (req as any).user?.id;
+
     const result = await pool.query(
       `UPDATE hoa_don SET 
         phuong_thuc_thanh_toan = $1, 
         trang_thai_thanh_toan = $2, 
         ghi_chu = $3,
+        nhan_vien_id = $4,
         updated_at = CURRENT_TIMESTAMP
-      WHERE id = $4 RETURNING *`,
-      [phuong_thuc_thanh_toan, trang_thai_thanh_toan, ghi_chu, id]
+      WHERE id = $5 RETURNING *`,
+      [phuong_thuc_thanh_toan, trang_thai_thanh_toan, ghi_chu, nhanVienId, id]
     );
 
     if (result.rows.length === 0) {

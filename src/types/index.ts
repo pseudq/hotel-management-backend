@@ -67,6 +67,7 @@ export interface DatPhong {
   id: number;
   khach_hang_id: number;
   phong_id: number;
+  nhan_vien_id?: number; // Thêm trường nhân viên
   thoi_gian_vao: Date;
   thoi_gian_du_kien_ra?: Date; // Optional vì sẽ tính theo thời gian thực tế
   trang_thai: TrangThaiDatPhong;
@@ -90,6 +91,7 @@ export interface SuDungDichVu {
   id: number;
   dat_phong_id: number;
   dich_vu_id: number;
+  nhan_vien_id?: number; // Thêm trường nhân viên
   so_luong: number;
   gia_tien: number;
   thoi_gian_su_dung: Date;
@@ -103,6 +105,7 @@ export interface HoaDon {
   id: number;
   dat_phong_id: number;
   khach_hang_id: number;
+  nhan_vien_id?: number; // Thêm trường nhân viên
   thoi_gian_tra: Date;
   tong_tien_phong: number;
   tong_tien_dich_vu: number;

@@ -56,11 +56,12 @@ export const addServiceToBooking = async (
 ): Promise<SuDungDichVu> => {
   const result = await pool.query(
     `INSERT INTO su_dung_dich_vu (
-      dat_phong_id, dich_vu_id, so_luong, gia_tien, thoi_gian_su_dung, ghi_chu
-    ) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+      dat_phong_id, dich_vu_id, nhan_vien_id, so_luong, gia_tien, thoi_gian_su_dung, ghi_chu
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
     [
       suDungDichVu.dat_phong_id,
       suDungDichVu.dich_vu_id,
+      suDungDichVu.nhan_vien_id,
       suDungDichVu.so_luong || 1,
       suDungDichVu.gia_tien,
       suDungDichVu.thoi_gian_su_dung || new Date(),
@@ -75,9 +76,10 @@ export const getServicesByBooking = async (
 ): Promise<any[]> => {
   const result = await pool.query(
     `
-    SELECT sd.*, dv.ten_dich_vu
+    SELECT sd.*, dv.ten_dich_vu, nv.ho_ten as nhan_vien_ho_ten
     FROM su_dung_dich_vu sd
     JOIN dich_vu dv ON sd.dich_vu_id = dv.id
+    LEFT JOIN nhan_vien nv ON sd.nhan_vien_id = nv.id
     WHERE sd.dat_phong_id = $1
     ORDER BY sd.thoi_gian_su_dung
   `,
