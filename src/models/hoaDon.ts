@@ -536,12 +536,12 @@ export const calculateOptimalRoomCharge = (
   const vietnamThoiGianRa = convertToVietnamTime(thoiGianRa);
 
   // Log để debug
-  console.log(
-    `UTC Check-in: ${thoiGianVao.toISOString()}, Vietnam Check-in: ${vietnamThoiGianVao}`
-  );
-  console.log(
-    `UTC Check-out: ${thoiGianRa.toISOString()}, Vietnam Check-out: ${vietnamThoiGianRa}`
-  );
+  // console.log(
+  //   `UTC Check-in: ${thoiGianVao.toISOString()}, Vietnam Check-in: ${vietnamThoiGianVao}`
+  // );
+  // console.log(
+  //   `UTC Check-out: ${thoiGianRa.toISOString()}, Vietnam Check-out: ${vietnamThoiGianRa}`
+  // );
 
   // Lấy giá từ loại phòng
   const giaQuaDem = Number(loaiPhong.gia_qua_dem) || 150000;
@@ -579,9 +579,9 @@ export const calculateOptimalRoomCharge = (
   );
 
   // Log để debug
-  console.log(`Hourly price: ${hourlyResult.tongTien}`);
-  console.log(`Overnight price: ${overnightResult.tongTien}`);
-  console.log(`Daily price: ${dailyResult.tongTien}`);
+  // console.log(`Hourly price: ${hourlyResult.tongTien}`);
+  // console.log(`Overnight price: ${overnightResult.tongTien}`);
+  // console.log(`Daily price: ${dailyResult.tongTien}`);
 
   // So sánh để tìm phương án rẻ nhất
   let bestResult = hourlyResult;
